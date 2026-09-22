@@ -1,0 +1,337 @@
+import React from "react";
+import { motion } from "motion/react";
+import { ArrowRight, Download, Linkedin, Github, Instagram, Facebook, MessageCircle, Mail, Globe, Trophy, Sparkles, CheckCircle2, TrendingUp, ArrowUpRight } from "lucide-react";
+import { PORTFOLIO_DATA } from "../data/portfolio";
+import { SectionHeading } from "../components/SectionHeading";
+import { Experience } from "../components/Experience";
+import { Education } from "../components/Education";
+import { Skills } from "../components/Skills";
+import { Testimonials } from "../components/Testimonials";
+import { MagneticButton } from "../components/MagneticButton";
+
+interface AboutPageProps {
+  onNavigate: (page: string) => void;
+}
+
+export const AboutPage: React.FC<AboutPageProps> = ({ onNavigate }) => {
+  return (
+    <div className="pt-28 sm:pt-36 pb-24">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Page Header */}
+        <div className="max-w-4xl mb-16">
+          <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-widest text-[#6B6862] mb-4">
+            <span className="w-2 h-2 rounded-full bg-[#D4F050] border border-[#141413]/30" />
+            <span>ABOUT AVDHESH KUMAR</span>
+          </div>
+
+          <h1 className="font-display text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight text-[#141413] leading-[1.05] mb-6">
+            Developer. <br />
+            Problem solver. <br />
+            <span className="underline decoration-[#D4F050] decoration-4 underline-offset-8">
+              Always learning.
+            </span>
+          </h1>
+
+          <p className="font-sans text-lg sm:text-xl text-[#6B6862] leading-relaxed">
+            Full-Stack and Frontend Web Developer based in Gurgaon, India. Focused on building high-performance, accessible web applications with modern React, Next.js, and Node.js.
+          </p>
+        </div>
+
+        {/* Bio & Identity Composition */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start mb-24">
+          <div className="lg:col-span-7 space-y-6 text-base sm:text-lg text-[#141413]/85 leading-relaxed">
+            <p>
+              I am currently pursuing my <strong>Master of Computer Applications (MCA)</strong> at DPG Degree College, following a <strong>Bachelor of Computer Applications (BCA)</strong> graduated with an <strong>8.0 CGPA</strong> distinction.
+            </p>
+            <p>
+              My professional journey includes over 9 months of intensive frontend and IT web engineering internships across <strong>Estovir Technologies</strong> and <strong>Reachcure Healthcare</strong>. I specialize in building responsive Next.js/React applications, custom WordPress components, on-page SEO architectures, and integrating RESTful APIs with Node.js and MongoDB/SQL databases.
+            </p>
+            <p>
+              Beyond development, I am a <strong>3-time College Chess Champion</strong>. Competitive chess has honed my approach to software engineering: strategic planning, deep concentration, pattern recognition, and anticipating edge cases before writing code.
+            </p>
+
+            {/* Social Media Platform Icons Only (no text names) */}
+            <div className="pt-4 flex items-center gap-3">
+              <a
+                href="https://github.com/BCABro-9667"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="GitHub"
+                aria-label="GitHub"
+                className="w-11 h-11 rounded-full bg-[#141413] text-[#F5F2EA] hover:bg-[#D4F050] hover:text-[#141413] border border-[#141413] flex items-center justify-center transition-all duration-200 shadow-[2px_2px_0px_#141413] cursor-pointer"
+              >
+                <Github className="w-4 h-4" />
+              </a>
+
+              <a
+                href={PORTFOLIO_DATA.personal.linkedin}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="LinkedIn"
+                aria-label="LinkedIn"
+                className="w-11 h-11 rounded-full bg-[#141413] text-[#F5F2EA] hover:bg-[#D4F050] hover:text-[#141413] border border-[#141413] flex items-center justify-center transition-all duration-200 shadow-[2px_2px_0px_#141413] cursor-pointer"
+              >
+                <Linkedin className="w-4 h-4" />
+              </a>
+
+              <a
+                href="https://www.instagram.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Instagram"
+                aria-label="Instagram"
+                className="w-11 h-11 rounded-full bg-[#141413] text-[#F5F2EA] hover:bg-[#D4F050] hover:text-[#141413] border border-[#141413] flex items-center justify-center transition-all duration-200 shadow-[2px_2px_0px_#141413] cursor-pointer"
+              >
+                <Instagram className="w-4 h-4" />
+              </a>
+
+              <a
+                href="https://www.chess.com/member/prankmaster5"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Chess.com"
+                aria-label="Chess.com"
+                className="w-11 h-11 rounded-full bg-[#141413] text-[#F5F2EA] hover:bg-[#D4F050] hover:text-[#141413] border border-[#141413] flex items-center justify-center transition-all duration-200 shadow-[2px_2px_0px_#141413] cursor-pointer"
+              >
+                <span className="text-base leading-none select-none">♞</span>
+              </a>
+
+              <a
+                href="https://www.facebook.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Facebook"
+                aria-label="Facebook"
+                className="w-11 h-11 rounded-full bg-[#141413] text-[#F5F2EA] hover:bg-[#D4F050] hover:text-[#141413] border border-[#141413] flex items-center justify-center transition-all duration-200 shadow-[2px_2px_0px_#141413] cursor-pointer"
+              >
+                <Facebook className="w-4 h-4" />
+              </a>
+
+              <a
+                href="https://wa.me/919667346203"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="WhatsApp"
+                aria-label="WhatsApp"
+                className="w-11 h-11 rounded-full bg-[#141413] text-[#F5F2EA] hover:bg-[#D4F050] hover:text-[#141413] border border-[#141413] flex items-center justify-center transition-all duration-200 shadow-[2px_2px_0px_#141413] cursor-pointer"
+              >
+                <MessageCircle className="w-4 h-4" />
+              </a>
+
+              <a
+                href="mailto:avdhesh6968@gmail.com"
+                title="Email"
+                aria-label="Email"
+                className="w-11 h-11 rounded-full bg-[#141413] text-[#F5F2EA] hover:bg-[#D4F050] hover:text-[#141413] border border-[#141413] flex items-center justify-center transition-all duration-200 shadow-[2px_2px_0px_#141413] cursor-pointer"
+              >
+                <Mail className="w-4 h-4" />
+              </a>
+            </div>
+
+            {/* Download Resume and Current Portfolio in one single line */}
+            <div className="pt-2 flex items-center gap-2.5 sm:gap-3 w-full max-w-md">
+              <button
+                onClick={() => {
+                  const resumeText = `AVDHESH KUMAR - RESUME\nFull-Stack & Frontend Web Developer\nGurugram, India | avdhesh6968@gmail.com\n\nSUMMARY:\nFull-Stack Web Developer and Computer Applications student with over 9 months of intensive frontend and IT web engineering internship experience.\n\nEDUCATION:\n- Master of Computer Applications (MCA) - DPG Degree College (2025-2027) [ACTIVE DEGREE]\n- Bachelor of Computer Applications (BCA) - DPG Degree College (CGPA: 8.0, 2022-2025) [ACTIVE CGPA]\n- Senior Secondary (12th Grade) - 2022\n- Secondary School (10th Grade) - 2020\n\nEXPERIENCE [ACTIVE]:\n- Frontend & IT Engineering Intern at Estovir Technologies (6 months)\n- Frontend Web Development Intern at Reachcure Healthcare (3 months)\n\nTECHNICAL STACK:\nReact, Next.js, JavaScript, TypeScript, Node.js, Express, MongoDB, MySQL, Tailwind CSS, WordPress, SEO.\n\nHONORS & ACHIEVEMENTS [ACTIVE]:\n- 3x College Chess Champion`;
+                  const blob = new Blob([resumeText], { type: "text/plain;charset=utf-8" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "Avdhesh_Kumar_Resume.txt";
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-3 sm:py-3.5 rounded-full bg-[#D4F050] text-[#141413] font-mono text-[11px] sm:text-xs uppercase tracking-wider font-bold hover:bg-[#141413] hover:text-[#F5F2EA] transition-colors border-2 border-[#141413] shadow-[2px_2px_0px_#141413] cursor-pointer whitespace-nowrap"
+              >
+                <span>Download Resume</span>
+                <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              </button>
+
+              <a
+                href={PORTFOLIO_DATA.personal.portfolioUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-3 sm:py-3.5 rounded-full bg-[#FAF8F2] text-[#141413] font-mono text-[11px] sm:text-xs uppercase tracking-wider font-semibold hover:bg-[#141413] hover:text-[#D4F050] transition-colors border-2 border-[#141413] shadow-[2px_2px_0px_#141413] cursor-pointer whitespace-nowrap text-center"
+              >
+                <span>Current Portfolio</span>
+                <ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              </a>
+            </div>
+          </div>
+
+          {/* Right Highlights Bento Card */}
+          <div className="lg:col-span-5 p-8 rounded-3xl bg-[#FAF8F2] border-2 border-[#141413] shadow-[8px_8px_0px_#141413] space-y-6">
+            <div className="flex items-center justify-between border-b border-[#141413]/10 pb-4">
+              <div className="font-mono text-xs uppercase tracking-widest text-[#6B6862]">
+                QUICK STATS
+              </div>
+              <span className="font-mono text-xs text-[#A5C418] font-bold">2026 ACTIVE</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {PORTFOLIO_DATA.stats.map((stat, i) => (
+                <div key={i} className="p-4 rounded-2xl bg-[#F5F2EA] border border-[#141413]/10">
+                  <div className="font-display text-3xl sm:text-4xl font-bold text-[#141413]">
+                    {stat.value}
+                  </div>
+                  <div className="font-sans font-semibold text-xs text-[#141413] mt-1">
+                    {stat.label}
+                  </div>
+                  <div className="font-mono text-[10px] text-[#6B6862] mt-0.5">
+                    {stat.detail}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#141413] text-[#F5F2EA] flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#D4F050] text-[#141413] flex items-center justify-center font-bold text-lg">
+                ♟
+              </div>
+              <div>
+                <div className="font-display font-bold text-sm">Strategic Mindset</div>
+                <div className="font-mono text-xs text-[#9E9A91]">
+                  Analytical problem solving influenced by competitive chess
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Strengths & Weaknesses Section */}
+        <div className="mb-24">
+          <SectionHeading
+            label="SELF AWARENESS"
+            title="Strengths & areas of growth"
+            subtitle="An honest assessment of my core capabilities, collaborative strengths, and personal focus areas."
+            className="mb-12!"
+          />
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Strengths Card */}
+            <div className="p-8 sm:p-10 rounded-3xl bg-[#FAF8F2] border-2 border-[#141413] shadow-[8px_8px_0px_#141413] flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between border-b border-[#141413]/10 pb-4 mb-6">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-8 h-8 rounded-full bg-[#D4F050] border border-[#141413] flex items-center justify-center text-[#141413]">
+                      <CheckCircle2 className="w-4 h-4" />
+                    </span>
+                    <span className="font-display font-bold text-xl sm:text-2xl text-[#141413]">
+                      Strengths
+                    </span>
+                  </div>
+                  <span className="font-mono text-[10px] sm:text-xs px-3 py-1 rounded-full bg-[#D4F050] text-[#141413] font-bold uppercase tracking-wider border border-[#141413]/20">
+                    3 Core Assets
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  {PORTFOLIO_DATA.strengths.map((item, idx) => (
+                    <div
+                      key={item.title}
+                      className="p-5 rounded-2xl bg-[#F5F2EA] border border-[#141413]/10 hover:border-[#141413] transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-3 mb-1.5">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-6 h-6 rounded-md bg-[#141413] text-[#F5F2EA] font-mono text-xs font-bold flex items-center justify-center">
+                            0{idx + 1}
+                          </span>
+                          <h3 className="font-display font-bold text-base sm:text-lg text-[#141413]">
+                            {item.title}
+                          </h3>
+                        </div>
+                        <span className="font-mono text-[10px] text-[#6B6862] uppercase tracking-wider hidden sm:inline-block">
+                          {item.tagline}
+                        </span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-[#6B6862] leading-relaxed pl-8.5">
+                        {item.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-6 mt-6 border-t border-[#141413]/10 font-mono text-xs text-[#6B6862] flex items-center justify-between">
+                <span>Working style: Proactive & adaptive</span>
+                <span className="text-[#141413] font-semibold">High output</span>
+              </div>
+            </div>
+
+            {/* Weaknesses Card */}
+            <div className="p-8 sm:p-10 rounded-3xl bg-[#FAF8F2] border-2 border-[#141413] shadow-[8px_8px_0px_#141413] flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between border-b border-[#141413]/10 pb-4 mb-6">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-8 h-8 rounded-full bg-[#E8E5F7] border border-[#141413] flex items-center justify-center text-[#141413]">
+                      <TrendingUp className="w-4 h-4 text-[#7A74A8]" />
+                    </span>
+                    <span className="font-display font-bold text-xl sm:text-2xl text-[#141413]">
+                      Weaknesses
+                    </span>
+                  </div>
+                  <span className="font-mono text-[10px] sm:text-xs px-3 py-1 rounded-full bg-[#E8E5F7] text-[#141413] font-bold uppercase tracking-wider border border-[#141413]/20">
+                    Active Growth
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  {PORTFOLIO_DATA.weaknesses.map((item, idx) => (
+                    <div
+                      key={item.title}
+                      className="p-5 rounded-2xl bg-[#F5F2EA] border border-[#141413]/10 hover:border-[#141413] transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-3 mb-1.5">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-6 h-6 rounded-md bg-[#141413]/10 text-[#141413] font-mono text-xs font-bold flex items-center justify-center">
+                            0{idx + 1}
+                          </span>
+                          <h3 className="font-display font-bold text-base sm:text-lg text-[#141413]">
+                            {item.title}
+                          </h3>
+                        </div>
+                        <span className="font-mono text-[10px] text-[#FF6B35] font-semibold uppercase tracking-wider hidden sm:inline-block">
+                          {item.tagline}
+                        </span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-[#6B6862] leading-relaxed pl-8.5">
+                        {item.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-6 mt-6 border-t border-[#141413]/10 font-mono text-xs text-[#6B6862] flex items-center justify-between">
+                <span>Growth philosophy: Continuous refinement</span>
+                <span className="text-[#141413] font-semibold">Active improvement</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Skills Section */}
+        <div className="mb-24">
+          <Skills />
+        </div>
+
+        {/* Experience Section */}
+        <div className="mb-24">
+          <Experience />
+        </div>
+
+        {/* Education & Credentials */}
+        <div className="mb-24">
+          <Education />
+        </div>
+
+        {/* Collaborators / Testimonials */}
+        <div>
+          <Testimonials />
+        </div>
+      </div>
+    </div>
+  );
+};
