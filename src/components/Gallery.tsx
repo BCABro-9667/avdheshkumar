@@ -1,11 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sparkles, ArrowRight, Filter, Trophy, Award, Code2, ExternalLink } from "lucide-react";
 import { PORTFOLIO_DATA, GalleryItem } from "../data/portfolio";
 import { SectionHeading } from "./SectionHeading";
 import { MagneticButton } from "./MagneticButton";
+import { fetchGallery } from "../lib/apiClient";
 
-const CATEGORIES = ["All", "Chess", "Certificates", "Hackathons", "Inventions"];
+const DEFAULT_CATEGORIES = ["All", "Chess", "Certificates", "Hackathons", "Inventions"];
 
 interface GalleryProps {
   onNavigate?: (page: string) => void;
@@ -15,8 +16,36 @@ interface GalleryProps {
 export const Gallery: React.FC<GalleryProps> = ({ onNavigate, isPage = false }) => {
   const [activeCategory, setActiveCategory] = useState("All");
   const [selectedPhoto, setSelectedPhoto] = useState<GalleryItem | null>(null);
+  const [items, setItems] = useState<GalleryItem[]>(PORTFOLIO_DATA.gallery);
+  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
 
-  const items = PORTFOLIO_DATA.gallery;
+  useEffect(() => {
+    let isMounted = true;
+    async function load() {
+      try {
+        const data = await fetchGallery();
+        if (data && data.length > 0 && isMounted) {
+          const mapped: GalleryItem[] = data.map((item: any, idx: number) => ({
+            id: item._id || String(idx),
+            title: item.title,
+            category: item.category || "Milestones",
+            date: item.date || "Recent",
+            description: item.description || item.title,
+            imageUrl: item.image || item.imageUrl || "https://images.unsplash.com/photo-1529699211952-734e80c4d42b?auto=format&fit=crop&w=1200&q=80",
+          }));
+          setItems(mapped);
+
+          const uniqueCats = Array.from(new Set(["All", ...mapped.map((m) => m.category).filter(Boolean)]));
+          setCategories(uniqueCats.length > 1 ? uniqueCats : DEFAULT_CATEGORIES);
+        }
+      } catch (err) {
+        console.warn("Could not load dynamic gallery items:", err);
+      }
+    }
+    load();
+    return () => { isMounted = false; };
+  }, []);
+
   const filteredItems = isPage
     ? activeCategory === "All"
       ? items
@@ -53,7 +82,7 @@ export const Gallery: React.FC<GalleryProps> = ({ onNavigate, isPage = false }) 
               <Filter className="w-3.5 h-3.5" />
               <span>Filter:</span>
             </div>
-            {CATEGORIES.map((cat) => {
+            {categories.map((cat) => {
               const isActive = activeCategory === cat;
               return (
                 <button

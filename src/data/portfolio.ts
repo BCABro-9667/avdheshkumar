@@ -1,5 +1,6 @@
 export interface Project {
   id: string;
+  _id?: string;
   number: string;
   title: string;
   category: string;
@@ -9,10 +10,12 @@ export interface Project {
   style: 'dark' | 'cream' | 'lavender';
   ctaText: string;
   url: string;
+  slug?: string;
   githubUrl?: string;
   highlightMetric?: string;
   imageUrl?: string;
   imageUrls?: string[];
+  likes?: number;
 }
 
 export interface ExperienceItem {
@@ -47,6 +50,18 @@ export interface AchievementItem {
   subtitle: string;
   year: string;
   iconType: 'chess' | 'sports' | 'scholarship' | 'award';
+}
+
+export interface ServiceItem {
+  id: string;
+  number: string;
+  title: string;
+  tagline: string;
+  description: string;
+  deliverables: string[];
+  techStack: string[];
+  iconType: "web" | "uiux" | "fullstack" | "ecommerce" | "seo" | "support";
+  badge?: string;
 }
 
 export interface BlogSection {
@@ -110,6 +125,11 @@ export const PORTFOLIO_DATA = {
     email: "avdeshrajput925064@gmail.com",
     phone: "+91 96673 46203",
     linkedin: "https://linkedin.com/in/avdhesh-bca-/",
+    github: "https://github.com/BCABro-9667",
+    twitter: "https://twitter.com",
+    instagram: "https://instagram.com",
+    facebook: "https://facebook.com",
+    youtube: "https://youtube.com/@BCABRO",
     portfolioUrl: "https://avdheshh-portfolio.netlify.app",
     statusText: "AVAILABLE FOR OPPORTUNITIES",
     heroHeadline: {
@@ -160,6 +180,105 @@ export const PORTFOLIO_DATA = {
     { label: "Featured Projects", value: "6", detail: "Full-stack, e-com & community" },
     { label: "BCA CGPA", value: "8.0", detail: "Academic excellence in CS" },
     { label: "College Chess Champion", value: "4×", detail: "Strategic thinking & focus" },
+  ],
+
+  services: [
+    {
+      id: "web-dev",
+      number: "01",
+      title: "Web Development",
+      tagline: "Modern, responsive websites and web applications.",
+      description: "Crafting blazing fast, responsive, and standards-compliant web applications built with Next.js, React, and modern TypeScript tailored for seamless user experiences.",
+      deliverables: [
+        "Responsive & mobile-first layouts",
+        "Single-Page & Multi-Page web applications",
+        "Cross-browser & cross-device compatibility",
+        "Component-driven modular architecture",
+      ],
+      techStack: ["React.js", "Next.js", "TypeScript", "Tailwind CSS"],
+      iconType: "web" as const,
+      badge: "Core Service",
+    },
+    {
+      id: "uiux-dev",
+      number: "02",
+      title: "UI/UX Development",
+      tagline: "Clean, user-friendly, and interactive interfaces.",
+      description: "Transforming ideas into visually refined, intuitive interfaces with micro-interactions, accessible typography, and frictionless digital journeys.",
+      deliverables: [
+        "Interactive prototypes & design systems",
+        "Intuitive navigation & user journeys",
+        "Micro-animations & tactile transitions",
+        "WCAG accessibility & typography hierarchy",
+      ],
+      techStack: ["Figma to Code", "Motion", "Tailwind CSS", "Responsive UX"],
+      iconType: "uiux" as const,
+      badge: "User Centered",
+    },
+    {
+      id: "fullstack-dev",
+      number: "03",
+      title: "Full-Stack Development",
+      tagline: "Frontend + backend + database integration.",
+      description: "Engineering cohesive end-to-end architectures connecting dynamic client interfaces with robust Node.js APIs, serverless handlers, and scalable database schemas.",
+      deliverables: [
+        "RESTful & GraphQL API integration",
+        "Database modeling (MongoDB & SQL)",
+        "Secure authentication & JWT session management",
+        "Server-side rendering & state workflows",
+      ],
+      techStack: ["Node.js", "Express.js", "MongoDB", "MySQL / SQL"],
+      iconType: "fullstack" as const,
+      badge: "End-to-End",
+    },
+    {
+      id: "ecommerce-dev",
+      number: "04",
+      title: "E-Commerce Development",
+      tagline: "Online stores, payments, products, orders, and dashboards.",
+      description: "Building high-converting digital storefronts equipped with secure checkout funnels, product catalog management, order tracking, and custom admin portals.",
+      deliverables: [
+        "Product catalogs & instant filter systems",
+        "Cart workflows & secure payment gateways",
+        "Order lifecycle & customer management",
+        "Merchant back-office admin dashboards",
+      ],
+      techStack: ["Next.js", "Payment Gateways", "MongoDB", "Shopify / WooCommerce"],
+      iconType: "ecommerce" as const,
+      badge: "High Conversion",
+    },
+    {
+      id: "seo-optimization",
+      number: "05",
+      title: "Website Optimization & SEO",
+      tagline: "Speed, Core Web Vitals, technical SEO, and search visibility.",
+      description: "Auditing and elevating performance benchmarks, eliminating rendering bottlenecks, and implementing structured Schema metadata for prominent search discoverability.",
+      deliverables: [
+        "90+ Google Lighthouse & Core Web Vitals",
+        "Technical SEO & OpenGraph / Schema metadata",
+        "Asset minification & image optimization",
+        "Search engine indexing & crawl speed",
+      ],
+      techStack: ["Lighthouse", "Schema.org", "Next.js SEO", "Web Vitals"],
+      iconType: "seo" as const,
+      badge: "High Performance",
+    },
+    {
+      id: "maintenance-support",
+      number: "06",
+      title: "Website Maintenance & Support",
+      tagline: "Bug fixes, updates, security, backups, and ongoing improvements.",
+      description: "Delivering dependable technical support, continuous security auditing, regular dependency updates, automated backups, and proactive enhancements.",
+      deliverables: [
+        "Routine dependency & security updates",
+        "Emergency bug resolution & hotfixes",
+        "Automated backups & disaster recovery",
+        "Performance monitoring & continuous QA",
+      ],
+      techStack: ["Git Workflow", "Security Audits", "Monitoring", "Continuous QA"],
+      iconType: "support" as const,
+      badge: "24/7 Reliability",
+    },
   ],
 
   marqueeItems: [

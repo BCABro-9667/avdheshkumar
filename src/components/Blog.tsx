@@ -1,15 +1,46 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { ArrowUpRight, Clock, Tag, ArrowRight } from "lucide-react";
 import { SectionHeading } from "./SectionHeading";
-import { PORTFOLIO_DATA } from "../data/portfolio";
+import { PORTFOLIO_DATA, BlogPostItem } from "../data/portfolio";
 import { MagneticButton } from "./MagneticButton";
+import { LikeButton } from "./LikeButton";
+import { fetchBlogPosts } from "../lib/apiClient";
 
 interface BlogProps {
   onNavigate?: (page: string) => void;
 }
 
 export const Blog: React.FC<BlogProps> = ({ onNavigate }) => {
+  const [blogsList, setBlogsList] = useState<BlogPostItem[]>(PORTFOLIO_DATA.blogs);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function load() {
+      try {
+        const posts = await fetchBlogPosts();
+        if (posts && posts.length > 0 && isMounted) {
+          const mapped: BlogPostItem[] = posts.map((p: any, idx: number) => ({
+            id: p.slug || p._id || `blog-${idx}`,
+            title: p.title,
+            status: p.status || "published",
+            category: p.category || "Web Development",
+            readTime: p.readTime || `${Math.max(3, Math.ceil((p.content?.length || 500) / 400))} min read`,
+            excerpt: p.excerpt || p.content?.slice(0, 140) || "",
+            tags: Array.isArray(p.tags) && p.tags.length > 0 ? p.tags : [p.category || "Full-Stack"],
+            content: p.content,
+            imageUrl: p.featuredImage || "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200&q=80",
+          }));
+          setBlogsList(mapped);
+        }
+      } catch (err) {
+        console.warn("Could not load dynamic blog posts:", err);
+      }
+    }
+    load();
+    return () => { isMounted = false; };
+  }, []);
+
   const handlePostClick = (postId: string) => {
     window.location.hash = `blog/${postId}`;
     if (onNavigate) {
@@ -22,7 +53,7 @@ export const Blog: React.FC<BlogProps> = ({ onNavigate }) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
           <SectionHeading
-            label="05 / JOURNAL & ARTICLES"
+            label="04 / JOURNAL & ARTICLES"
             title="Ideas, builds & lessons."
             subtitle="Thoughts, architectural case studies, and engineering notes on modern web craftsmanship."
           />
@@ -41,7 +72,7 @@ export const Blog: React.FC<BlogProps> = ({ onNavigate }) => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {PORTFOLIO_DATA.blogs.slice(0, 3).map((post, idx) => (
+          {blogsList.slice(0, 3).map((post, idx) => (
             <motion.article
               key={post.id}
               initial={{ opacity: 0, y: 25 }}
@@ -106,8 +137,13 @@ export const Blog: React.FC<BlogProps> = ({ onNavigate }) => {
 
               <div className="pt-4 border-t border-[#141413]/10 flex items-center justify-between font-mono text-xs text-[#141413] font-medium">
                 <span className="group-hover:underline">Read full article ↗</span>
-                <div className="w-8 h-8 rounded-full bg-[#141413] text-[#F5F2EA] flex items-center justify-center group-hover:bg-[#D4F050] group-hover:text-[#141413] transition-colors">
-                  <ArrowUpRight className="w-4 h-4 group-hover:rotate-45 transition-transform" />
+                <div className="flex items-center gap-2">
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <LikeButton itemId={post.id} type="blog" size="sm" />
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-[#141413] text-[#F5F2EA] flex items-center justify-center group-hover:bg-[#D4F050] group-hover:text-[#141413] transition-colors">
+                    <ArrowUpRight className="w-4 h-4 group-hover:rotate-45 transition-transform" />
+                  </div>
                 </div>
               </div>
             </motion.article>

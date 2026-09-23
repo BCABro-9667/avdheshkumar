@@ -93,7 +93,6 @@ export const Hero: React.FC<HeroProps> = ({ onExploreClick, onContactClick }) =>
               </MagneticButton>
 
               <div className="hidden xl:flex items-center gap-2 pl-4 border-l border-[#141413]/15 font-mono text-xs text-[#6B6862]">
-                <Sparkles className="w-3.5 h-3.5 text-[#A5C418]" />
                 <span>MCA Student & Full-Stack Engineer</span>
               </div>
             </motion.div>

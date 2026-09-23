@@ -1,13 +1,18 @@
 import React from "react";
-import { ArrowUp, Github, Instagram, Linkedin, Globe, Mail, Facebook, MessageCircle } from "lucide-react";
+import { ArrowUp, Github, Instagram, Linkedin, Globe, Mail, Facebook, MessageCircle, Twitter, Youtube } from "lucide-react";
 import { PORTFOLIO_DATA } from "../data/portfolio";
 import { MagneticButton } from "./MagneticButton";
+import { useSiteSettings } from "../context/SiteSettingsContext";
 
 interface FooterProps {
   onBackToTop: () => void;
+  onNavigate?: (page: string) => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onBackToTop }) => {
+export const Footer: React.FC<FooterProps> = ({ onBackToTop, onNavigate }) => {
+  const { settings } = useSiteSettings();
+  const s = settings.socialLinks;
+
   return (
     <footer className="border-t border-[#141413]/15 bg-[#141413] text-[#F5F2EA] pt-16 pb-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -19,7 +24,7 @@ export const Footer: React.FC<FooterProps> = ({ onBackToTop }) => {
 
           <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6">
             <a
-              href="https://github.com/BCABro-9667"
+              href={s.github || "https://github.com/BCABro-9667"}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-[#F5F2EA] hover:text-[#D4F050] transition-colors"
@@ -29,7 +34,7 @@ export const Footer: React.FC<FooterProps> = ({ onBackToTop }) => {
             </a>
 
             <a
-              href={PORTFOLIO_DATA.personal.linkedin}
+              href={s.linkedin || PORTFOLIO_DATA.personal.linkedin}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-[#F5F2EA] hover:text-[#D4F050] transition-colors"
@@ -38,8 +43,20 @@ export const Footer: React.FC<FooterProps> = ({ onBackToTop }) => {
               <span>LinkedIn</span>
             </a>
 
+            {s.twitter && (
+              <a
+                href={s.twitter}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-[#F5F2EA] hover:text-[#D4F050] transition-colors"
+              >
+                <Twitter className="w-3.5 h-3.5" />
+                <span>Twitter / X</span>
+              </a>
+            )}
+
             <a
-              href="https://www.instagram.com/"
+              href={s.instagram || "https://www.instagram.com/"}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-[#F5F2EA] hover:text-[#D4F050] transition-colors"
@@ -48,8 +65,20 @@ export const Footer: React.FC<FooterProps> = ({ onBackToTop }) => {
               <span>Instagram</span>
             </a>
 
+            {s.youtube && (
+              <a
+                href={s.youtube}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-[#F5F2EA] hover:text-[#D4F050] transition-colors"
+              >
+                <Youtube className="w-3.5 h-3.5" />
+                <span>YouTube</span>
+              </a>
+            )}
+
             <a
-              href="https://www.facebook.com/"
+              href={s.facebook || "https://www.facebook.com/"}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-[#F5F2EA] hover:text-[#D4F050] transition-colors"
@@ -59,41 +88,27 @@ export const Footer: React.FC<FooterProps> = ({ onBackToTop }) => {
             </a>
 
             <a
-              href="https://wa.me/919667346203"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-[#F5F2EA] hover:text-[#D4F050] transition-colors"
-            >
-              <MessageCircle className="w-3.5 h-3.5" />
-              <span>WhatsApp</span>
-            </a>
-
-            <a
-              href="https://www.chess.com/member/prankmaster5"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-[#F5F2EA] hover:text-[#D4F050] transition-colors"
-            >
-              <span className="text-sm">♞</span>
-              <span>Chess.com</span>
-            </a>
-
-            <a
-              href="https://avdheshh-portfolio.netlify.app"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-[#F5F2EA] hover:text-[#D4F050] transition-colors"
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span>Portfolio</span>
-            </a>
-
-            <a
-              href={`mailto:${PORTFOLIO_DATA.personal.email}`}
+              href={`mailto:${s.email || PORTFOLIO_DATA.personal.email}`}
               className="flex items-center gap-1.5 text-[#F5F2EA] hover:text-[#D4F050] transition-colors"
             >
               <Mail className="w-3.5 h-3.5" />
               <span>Email</span>
+            </a>
+
+            <a
+              href="#chai"
+              onClick={(e) => {
+                e.preventDefault();
+                if (onNavigate) {
+                  onNavigate("chai");
+                } else {
+                  window.location.hash = "chai";
+                }
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#D4F050] text-[#141413] font-bold text-xs hover:bg-[#FAF8F2] transition-colors border border-[#141413]/20"
+            >
+              <span>☕</span>
+              <span>Buy Me a Chai</span>
             </a>
           </div>
         </div>

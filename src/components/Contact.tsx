@@ -5,6 +5,11 @@ import {
   Phone,
   MapPin,
   Linkedin,
+  Github,
+  Instagram,
+  Facebook,
+  Twitter,
+  Youtube,
   Globe,
   ArrowUpRight,
   Send,
@@ -15,8 +20,13 @@ import {
 } from "lucide-react";
 import { PORTFOLIO_DATA } from "../data/portfolio";
 import { MagneticButton } from "./MagneticButton";
+import { useSiteSettings } from "../context/SiteSettingsContext";
+import { submitContactMessage } from "../lib/apiClient";
 
 export const Contact: React.FC = () => {
+  const { settings } = useSiteSettings();
+  const socialLinks = settings.socialLinks;
+
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -52,14 +62,18 @@ export const Contact: React.FC = () => {
 
     setStatus("loading");
 
-    // Simulated network transmission / Frontend ready state
-    // TODO: Connect to Resend, Formspree, or an Express /api/contact endpoint
     try {
-      await new Promise((resolve) => setTimeout(resolve, 900));
+      await submitContactMessage({
+        name: formData.name,
+        email: formData.email,
+        subject: formData.subject,
+        message: formData.message,
+      });
       setStatus("success");
       setFormData({ name: "", email: "", subject: "", message: "" });
       setErrors({});
-    } catch {
+    } catch (err) {
+      console.error("Contact submit error:", err);
       setStatus("error");
     }
   };
@@ -77,7 +91,7 @@ export const Contact: React.FC = () => {
         <div className="mb-16 sm:mb-20">
           <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-widest text-[#6B6862] mb-4">
             <span className="w-2 h-2 rounded-full bg-[#D4F050] border border-[#141413]/30" />
-            <span>06 / GET IN TOUCH</span>
+            <span>05 / GET IN TOUCH</span>
           </div>
 
           <h2 className="font-display text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight text-[#141413] leading-[1.02] max-w-4xl">
@@ -93,10 +107,10 @@ export const Contact: React.FC = () => {
         </div>
 
         {/* Grid: Direct Contact Details (Left) + Contact Form (Right) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-stretch">
           {/* Left Column: Unified Direct Info & Social Profiles Card */}
-          <div className="lg:col-span-5">
-            <div className="p-8 sm:p-10 rounded-3xl bg-[#FAF8F2] border-2 border-[#141413] shadow-[8px_8px_0px_#141413] space-y-8">
+          <div className="lg:col-span-5 flex flex-col">
+            <div className="p-8 sm:p-10 rounded-3xl bg-[#FAF8F2] border-2 border-[#141413] shadow-[8px_8px_0px_#141413] h-full flex flex-col justify-between space-y-6">
               <div>
                 <div className="font-mono text-xs uppercase tracking-widest text-[#6B6862] border-b border-[#141413]/10 pb-3 mb-6">
                   DIRECT CHANNELS & PROFILES
@@ -115,16 +129,16 @@ export const Contact: React.FC = () => {
                             Email
                           </div>
                           <a
-                            href={`mailto:${PORTFOLIO_DATA.personal.email}`}
+                            href={`mailto:${socialLinks.email || PORTFOLIO_DATA.personal.email}`}
                             className="font-display font-semibold text-xs sm:text-sm md:text-base text-[#141413] hover:text-[#8EAE00] hover:underline break-all transition-colors block"
                           >
-                            {PORTFOLIO_DATA.personal.email}
+                            {socialLinks.email || PORTFOLIO_DATA.personal.email}
                           </a>
                         </div>
                       </div>
 
                       <button
-                        onClick={() => copyToClipboard(PORTFOLIO_DATA.personal.email, "email")}
+                        onClick={() => copyToClipboard(socialLinks.email || PORTFOLIO_DATA.personal.email, "email")}
                         title="Copy email"
                         className="p-2 rounded-xl bg-[#FAF8F2] border border-[#141413]/20 hover:border-[#141413] hover:bg-[#141413] hover:text-[#D4F050] text-[#6B6862] transition-colors cursor-pointer shrink-0"
                       >
@@ -149,16 +163,16 @@ export const Contact: React.FC = () => {
                             Phone / WhatsApp
                           </div>
                           <a
-                            href={`tel:${PORTFOLIO_DATA.personal.phone.replace(/\s+/g, "")}`}
+                            href={`tel:${(socialLinks.phone || PORTFOLIO_DATA.personal.phone).replace(/\s+/g, "")}`}
                             className="font-display font-semibold text-sm sm:text-base text-[#141413] hover:text-[#8EAE00] hover:underline transition-colors block"
                           >
-                            {PORTFOLIO_DATA.personal.phone}
+                            {socialLinks.phone || PORTFOLIO_DATA.personal.phone}
                           </a>
                         </div>
                       </div>
 
                       <button
-                        onClick={() => copyToClipboard(PORTFOLIO_DATA.personal.phone, "phone")}
+                        onClick={() => copyToClipboard(socialLinks.phone || PORTFOLIO_DATA.personal.phone, "phone")}
                         title="Copy phone"
                         className="p-2 rounded-xl bg-[#FAF8F2] border border-[#141413]/20 hover:border-[#141413] hover:bg-[#141413] hover:text-[#D4F050] text-[#6B6862] transition-colors cursor-pointer shrink-0"
                       >
@@ -182,7 +196,7 @@ export const Contact: React.FC = () => {
                           Location
                         </div>
                         <div className="font-display font-semibold text-sm sm:text-base text-[#141413]">
-                          {PORTFOLIO_DATA.personal.location}
+                          {socialLinks.location || PORTFOLIO_DATA.personal.location}
                         </div>
                         <div className="font-mono text-xs text-[#6B6862] mt-0.5">
                           Available for onsite in Delhi-NCR & remote worldwide
@@ -193,13 +207,105 @@ export const Contact: React.FC = () => {
                 </div>
               </div>
 
-              
+              {/* Social Profiles - Dynamic Icons Row */}
+              <div className="pt-2 border-t border-[#141413]/10">
+                <div className="font-mono text-xs uppercase tracking-widest text-[#6B6862] pb-3 mb-1">
+                  CONNECT & SOCIAL PROFILES
+                </div>
+
+                <div className="grid grid-cols-6 gap-2 sm:gap-2.5">
+                  {/* LinkedIn */}
+                  <a
+                    href={socialLinks.linkedin || PORTFOLIO_DATA.personal.linkedin}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="LinkedIn Profile"
+                    title="LinkedIn"
+                    className="h-11 rounded-xl bg-[#F5F2EA] border-2 border-[#141413] hover:bg-[#141413] hover:text-[#D4F050] text-[#141413] transition-all duration-200 flex items-center justify-center shadow-[2px_2px_0px_#141413] hover:shadow-none hover:translate-x-[1px] hover:translate-y-[1px] cursor-pointer group"
+                  >
+                    <Linkedin className="w-4 h-4 transition-transform group-hover:scale-110" />
+                  </a>
+
+                  {/* GitHub */}
+                  <a
+                    href={socialLinks.github || PORTFOLIO_DATA.personal.github}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="GitHub Profile"
+                    title="GitHub"
+                    className="h-11 rounded-xl bg-[#F5F2EA] border-2 border-[#141413] hover:bg-[#141413] hover:text-[#D4F050] text-[#141413] transition-all duration-200 flex items-center justify-center shadow-[2px_2px_0px_#141413] hover:shadow-none hover:translate-x-[1px] hover:translate-y-[1px] cursor-pointer group"
+                  >
+                    <Github className="w-4 h-4 transition-transform group-hover:scale-110" />
+                  </a>
+
+                  {/* Twitter / X */}
+                  <a
+                    href={socialLinks.twitter || PORTFOLIO_DATA.personal.twitter}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Twitter Profile"
+                    title="Twitter / X"
+                    className="h-11 rounded-xl bg-[#F5F2EA] border-2 border-[#141413] hover:bg-[#141413] hover:text-[#D4F050] text-[#141413] transition-all duration-200 flex items-center justify-center shadow-[2px_2px_0px_#141413] hover:shadow-none hover:translate-x-[1px] hover:translate-y-[1px] cursor-pointer group"
+                  >
+                    <Twitter className="w-4 h-4 transition-transform group-hover:scale-110" />
+                  </a>
+
+                  {/* Instagram */}
+                  <a
+                    href={socialLinks.instagram || PORTFOLIO_DATA.personal.instagram}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Instagram Profile"
+                    title="Instagram"
+                    className="h-11 rounded-xl bg-[#F5F2EA] border-2 border-[#141413] hover:bg-[#141413] hover:text-[#D4F050] text-[#141413] transition-all duration-200 flex items-center justify-center shadow-[2px_2px_0px_#141413] hover:shadow-none hover:translate-x-[1px] hover:translate-y-[1px] cursor-pointer group"
+                  >
+                    <Instagram className="w-4 h-4 transition-transform group-hover:scale-110" />
+                  </a>
+
+                  {/* YouTube */}
+                  <a
+                    href={socialLinks.youtube || "https://youtube.com/@BCABRO"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="YouTube Channel"
+                    title="YouTube"
+                    className="h-11 rounded-xl bg-[#F5F2EA] border-2 border-[#141413] hover:bg-[#141413] hover:text-[#D4F050] text-[#141413] transition-all duration-200 flex items-center justify-center shadow-[2px_2px_0px_#141413] hover:shadow-none hover:translate-x-[1px] hover:translate-y-[1px] cursor-pointer group"
+                  >
+                    <Youtube className="w-4 h-4 transition-transform group-hover:scale-110" />
+                  </a>
+
+                  {/* Facebook */}
+                  <a
+                    href={socialLinks.facebook || "https://facebook.com"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Facebook Profile"
+                    title="Facebook"
+                    className="h-11 rounded-xl bg-[#F5F2EA] border-2 border-[#141413] hover:bg-[#141413] hover:text-[#D4F050] text-[#141413] transition-all duration-200 flex items-center justify-center shadow-[2px_2px_0px_#141413] hover:shadow-none hover:translate-x-[1px] hover:translate-y-[1px] cursor-pointer group"
+                  >
+                    <Facebook className="w-4 h-4 transition-transform group-hover:scale-110" />
+                  </a>
+                </div>
+              </div>
+
+              {/* Status indicator badge */}
+              <div className="pt-2 border-t border-[#141413]/10">
+                <div className="p-3.5 rounded-2xl bg-[#D4F050]/20 border border-[#141413]/15 flex items-center gap-3">
+                  <div className="relative flex h-3 w-3 shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#8EAE00] opacity-75" />
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-[#8EAE00]" />
+                  </div>
+                  <div className="text-xs font-mono text-[#141413]">
+                    <span className="font-bold">{socialLinks.statusText || "Available for opportunities"}</span> — Fast response within ~24h
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Right Column: Contact Form */}
-          <div className="lg:col-span-7">
-            <div className="p-8 sm:p-10 rounded-3xl bg-[#FAF8F2] border-2 border-[#141413] shadow-[8px_8px_0px_#141413]">
+          <div className="lg:col-span-7 flex flex-col">
+            <div className="p-8 sm:p-10 rounded-3xl bg-[#FAF8F2] border-2 border-[#141413] shadow-[8px_8px_0px_#141413] h-full flex flex-col justify-between">
               <div className="flex items-center justify-between border-b border-[#141413]/10 pb-4 mb-8">
                 <div className="font-display text-2xl font-bold text-[#141413]">
                   Send a Direct Message
@@ -209,7 +315,7 @@ export const Contact: React.FC = () => {
                 </div>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+              <form onSubmit={handleSubmit} className="space-y-6 flex-1 flex flex-col justify-between" noValidate>
                 {/* Name & Email Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   {/* Name */}

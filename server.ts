@@ -4,10 +4,12 @@ import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createServer as createViteServer } from "vite";
-import { connectDB } from "./src/server/db";
-import { User, Project, BlogPost, Gallery, Category, SEOPageSettings } from "./src/server/models";
+import { connectDB, isMongoDBConnected } from "./src/server/db";
+import { User, Project, BlogPost, Gallery, Category, SEOPageSettings, Donation, SiteSettings, Inquiry } from "./src/server/models";
 import { generateToken, verifyAdminToken, AdminAuthRequest } from "./src/server/auth";
 import { uploadToCloudinary, deleteFromCloudinary } from "./src/server/cloudinary";
+import { authenticateAdmin, getAdminEnvCredentials, maskEmail } from "./src/server/adminAuthUtil";
+import { getRazorpayInstance, verifyRazorpaySignature } from "./src/server/razorpay";
 
 dotenv.config();
 
@@ -35,28 +37,51 @@ app.post("/api/auth/login", async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required." });
+      return res.status(400).json({
+        error: "Email and password are required.",
+        diagnostic: {
+          timestamp: new Date().toISOString(),
+          emailProvided: email || "",
+          reason: "Email or password payload was missing.",
+        },
+      });
     }
 
-    const admin = await User.findOne({ email: email.toLowerCase() });
-    if (!admin || !admin.password) {
-      return res.status(401).json({ error: "Invalid email or password." });
+    const result = await authenticateAdmin(email, password);
+    if (!result.success) {
+      return res.status(401).json({
+        error: result.error || "Invalid email or password.",
+        diagnostic: result.diagnostic,
+      });
     }
 
-    const isMatch = await bcrypt.compare(password, admin.password);
-    if (!isMatch) {
-      return res.status(401).json({ error: "Invalid email or password." });
-    }
-
-    const token = generateToken({ id: admin._id, email: admin.email, role: admin.role });
     return res.json({
-      token,
-      admin: { name: admin.name, email: admin.email, role: admin.role },
+      token: result.token,
+      admin: result.admin,
+      diagnostic: result.diagnostic,
     });
   } catch (err: any) {
-    console.error("Login error:", err);
-    return res.status(500).json({ error: "Internal server error during login." });
+    console.error("Login route error:", err);
+    return res.status(500).json({
+      error: "Internal server error during login.",
+      details: err.message,
+    });
   }
+});
+
+// Auth Diagnostic Status (safe metadata for troubleshooting)
+app.get("/api/auth/diagnostic", (req: Request, res: Response) => {
+  const { email } = getAdminEnvCredentials();
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    configuredAdminEmailMasked: maskEmail(email),
+    configuredEmailDomain: email.includes("@") ? email.split("@")[1] : "unknown",
+    hasConfiguredPassword: Boolean(process.env.ADMIN_PASSWORD),
+    hasJwtSecret: Boolean(process.env.JWT_SECRET),
+    mongoStatus: isMongoDBConnected() ? "connected" : "disconnected",
+    uptimeSeconds: Math.floor(process.uptime()),
+  });
 });
 
 // Verify Token
@@ -68,105 +93,221 @@ app.get("/api/auth/verify", verifyAdminToken, async (req: AdminAuthRequest, res:
 app.get("/api/projects", async (req: Request, res: Response) => {
   try {
     const { category, search, tag } = req.query;
-    const query: any = { status: "published" };
+    let projects: any[] = [];
 
-    if (category && category !== "All") {
-      query.category = category;
-    }
-    if (tag) {
-      query.tags = tag;
-    }
-    if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { shortDescription: { $regex: search, $options: "i" } },
-        { techStack: { $regex: search, $options: "i" } },
-      ];
+    if (isMongoDBConnected()) {
+      try {
+        const query: any = { status: "published" };
+        if (category && category !== "All") {
+          query.category = category;
+        }
+        if (tag) {
+          query.tags = tag;
+        }
+        if (search) {
+          query.$or = [
+            { title: { $regex: search, $options: "i" } },
+            { shortDescription: { $regex: search, $options: "i" } },
+            { techStack: { $regex: search, $options: "i" } },
+          ];
+        }
+        projects = await Project.find(query).sort({ publishedAt: -1, createdAt: -1 });
+      } catch (dbErr) {
+        console.warn("MongoDB query failed for projects, falling back to memory:", dbErr);
+      }
     }
 
-    const projects = await Project.find(query).sort({ publishedAt: -1, createdAt: -1 });
+    if (!projects || projects.length === 0) {
+      projects = inMemoryProjects.filter((p) => p.status === "published");
+      if (category && category !== "All") {
+        projects = projects.filter((p) => p.category?.toLowerCase() === String(category).toLowerCase());
+      }
+      if (tag) {
+        projects = projects.filter((p) => Array.isArray(p.tags) && p.tags.some((t: string) => t.toLowerCase() === String(tag).toLowerCase()));
+      }
+      if (search) {
+        const s = String(search).toLowerCase();
+        projects = projects.filter((p) =>
+          p.title?.toLowerCase().includes(s) ||
+          p.shortDescription?.toLowerCase().includes(s) ||
+          (Array.isArray(p.techStack) && p.techStack.some((t: string) => t.toLowerCase().includes(s)))
+        );
+      }
+    }
+
     return res.json(projects);
   } catch (err) {
     console.error("Error fetching projects:", err);
-    return res.status(500).json({ error: "Failed to fetch projects" });
+    return res.json(inMemoryProjects.filter((p) => p.status === "published"));
   }
 });
 
 app.get("/api/projects/:slug", async (req: Request, res: Response) => {
   try {
-    const project = await Project.findOne({ slug: req.params.slug, status: "published" });
+    const { slug } = req.params;
+    let project: any = null;
+    let relatedProjects: any[] = [];
+    let relatedBlogs: any[] = [];
+
+    if (isMongoDBConnected()) {
+      try {
+        if (slug.match(/^[0-9a-fA-F]{24}$/)) {
+          project = await Project.findById(slug);
+        }
+        if (!project) {
+          project = await Project.findOne({ slug, status: "published" });
+        }
+        if (!project) {
+          project = await Project.findOne({ slug });
+        }
+
+        if (project) {
+          relatedProjects = await Project.find({
+            status: "published",
+            _id: { $ne: project._id },
+            $or: [{ category: project.category }, { techStack: { $in: project.techStack || [] } }]
+          }).limit(2);
+
+          relatedBlogs = await BlogPost.find({
+            status: "published",
+            $or: [{ category: project.category }, { tags: { $in: project.tags || [] } }]
+          }).limit(2);
+        }
+      } catch (dbErr) {
+        console.warn("MongoDB findOne failed for project:", dbErr);
+      }
+    }
+
+    if (!project) {
+      project = inMemoryProjects.find((p) => p.slug === slug || p._id === slug || p.id === slug);
+      if (project) {
+        relatedProjects = inMemoryProjects.filter((p) => p._id !== project._id && p.status === "published").slice(0, 2);
+        relatedBlogs = inMemoryBlogs.filter((b) => b.status === "published").slice(0, 2);
+      }
+    }
+
     if (!project) {
       return res.status(404).json({ error: "Project not found" });
     }
-    // Find related projects (same category or tech stack)
-    const relatedProjects = await Project.find({
-      status: "published",
-      _id: { $ne: project._id },
-      $or: [{ category: project.category }, { techStack: { $in: project.techStack } }]
-    }).limit(2);
-
-    // Find related blog posts
-    const relatedBlogs = await BlogPost.find({
-      status: "published",
-      $or: [{ category: project.category }, { tags: { $in: project.tags } }]
-    }).limit(2);
 
     return res.json({ project, relatedProjects, relatedBlogs });
   } catch (err) {
     console.error("Error fetching project by slug:", err);
+    const fallback = inMemoryProjects.find((p) => p.slug === req.params.slug || p._id === req.params.slug);
+    if (fallback) return res.json({ project: fallback, relatedProjects: [], relatedBlogs: [] });
     return res.status(500).json({ error: "Server error" });
   }
 });
 
 // Public Blog
-app.get("/api/blog", async (req: Request, res: Response) => {
+const handleGetBlogs = async (req: Request, res: Response) => {
   try {
     const { category, search, tag } = req.query;
-    const query: any = { status: "published" };
+    let posts: any[] = [];
 
-    if (category && category !== "All") {
-      query.category = category;
-    }
-    if (tag) {
-      query.tags = tag;
-    }
-    if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { excerpt: { $regex: search, $options: "i" } },
-        { content: { $regex: search, $options: "i" } },
-      ];
+    if (isMongoDBConnected()) {
+      try {
+        const query: any = { status: "published" };
+        if (category && category !== "All") {
+          query.category = category;
+        }
+        if (tag) {
+          query.tags = tag;
+        }
+        if (search) {
+          query.$or = [
+            { title: { $regex: search, $options: "i" } },
+            { excerpt: { $regex: search, $options: "i" } },
+            { content: { $regex: search, $options: "i" } },
+          ];
+        }
+        posts = await BlogPost.find(query).sort({ publishedAt: -1, createdAt: -1 });
+      } catch (dbErr) {
+        console.warn("MongoDB query failed for blogs, falling back to memory:", dbErr);
+      }
     }
 
-    const posts = await BlogPost.find(query).sort({ publishedAt: -1, createdAt: -1 });
+    if (!posts || posts.length === 0) {
+      posts = inMemoryBlogs.filter((b) => b.status === "published");
+      if (category && category !== "All") {
+        posts = posts.filter((b) => b.category?.toLowerCase() === String(category).toLowerCase());
+      }
+      if (tag) {
+        posts = posts.filter((b) => Array.isArray(b.tags) && b.tags.some((t: string) => t.toLowerCase() === String(tag).toLowerCase()));
+      }
+      if (search) {
+        const s = String(search).toLowerCase();
+        posts = posts.filter((b) =>
+          b.title?.toLowerCase().includes(s) ||
+          b.excerpt?.toLowerCase().includes(s) ||
+          b.content?.toLowerCase().includes(s)
+        );
+      }
+    }
+
     return res.json(posts);
   } catch (err) {
     console.error("Error fetching blog posts:", err);
-    return res.status(500).json({ error: "Failed to fetch blog posts" });
+    return res.json(inMemoryBlogs.filter((b) => b.status === "published"));
   }
-});
+};
+
+app.get("/api/blog", handleGetBlogs);
+app.get("/api/blogs", handleGetBlogs);
 
 app.get("/api/blog/:slug", async (req: Request, res: Response) => {
   try {
-    const post = await BlogPost.findOne({ slug: req.params.slug, status: "published" });
+    const { slug } = req.params;
+    let post: any = null;
+    let relatedArticles: any[] = [];
+    let relatedProjects: any[] = [];
+
+    if (isMongoDBConnected()) {
+      try {
+        if (slug.match(/^[0-9a-fA-F]{24}$/)) {
+          post = await BlogPost.findById(slug);
+        }
+        if (!post) {
+          post = await BlogPost.findOne({ slug, status: "published" });
+        }
+        if (!post) {
+          post = await BlogPost.findOne({ slug });
+        }
+
+        if (post) {
+          relatedArticles = await BlogPost.find({
+            status: "published",
+            _id: { $ne: post._id },
+            $or: [{ category: post.category }, { tags: { $in: post.tags || [] } }]
+          }).limit(2);
+
+          relatedProjects = await Project.find({
+            status: "published",
+            $or: [{ category: post.category }, { tags: { $in: post.tags || [] } }]
+          }).limit(2);
+        }
+      } catch (dbErr) {
+        console.warn("MongoDB findOne failed for blog:", dbErr);
+      }
+    }
+
+    if (!post) {
+      post = inMemoryBlogs.find((b) => b.slug === slug || b._id === slug || b.id === slug);
+      if (post) {
+        relatedArticles = inMemoryBlogs.filter((b) => b._id !== post._id && b.status === "published").slice(0, 2);
+        relatedProjects = inMemoryProjects.filter((p) => p.status === "published").slice(0, 2);
+      }
+    }
+
     if (!post) {
       return res.status(404).json({ error: "Blog post not found" });
     }
 
-    const relatedArticles = await BlogPost.find({
-      status: "published",
-      _id: { $ne: post._id },
-      $or: [{ category: post.category }, { tags: { $in: post.tags } }]
-    }).limit(2);
-
-    const relatedProjects = await Project.find({
-      status: "published",
-      $or: [{ category: post.category }, { tags: { $in: post.tags } }]
-    }).limit(2);
-
     return res.json({ post, relatedArticles, relatedProjects });
   } catch (err) {
     console.error("Error fetching blog post by slug:", err);
+    const fallback = inMemoryBlogs.find((b) => b.slug === req.params.slug || b._id === req.params.slug);
+    if (fallback) return res.json({ post: fallback, relatedArticles: [], relatedProjects: [] });
     return res.status(500).json({ error: "Server error" });
   }
 });
@@ -175,15 +316,31 @@ app.get("/api/blog/:slug", async (req: Request, res: Response) => {
 app.get("/api/gallery", async (req: Request, res: Response) => {
   try {
     const { category } = req.query;
-    const query: any = { status: "published" };
-    if (category && category !== "All") {
-      query.category = category;
+    let galleryItems: any[] = [];
+
+    if (isMongoDBConnected()) {
+      try {
+        const query: any = { status: "published" };
+        if (category && category !== "All") {
+          query.category = category;
+        }
+        galleryItems = await Gallery.find(query).sort({ createdAt: -1 });
+      } catch (dbErr) {
+        console.warn("MongoDB find failed for gallery, falling back to memory:", dbErr);
+      }
     }
-    const galleryItems = await Gallery.find(query).sort({ createdAt: -1 });
+
+    if (!galleryItems || galleryItems.length === 0) {
+      galleryItems = inMemoryGallery.filter((g) => g.status === "published");
+      if (category && category !== "All") {
+        galleryItems = galleryItems.filter((g) => g.category?.toLowerCase() === String(category).toLowerCase());
+      }
+    }
+
     return res.json(galleryItems);
   } catch (err) {
     console.error("Error fetching gallery:", err);
-    return res.status(500).json({ error: "Failed to fetch gallery items" });
+    return res.json(inMemoryGallery.filter((g) => g.status === "published"));
   }
 });
 
@@ -191,9 +348,31 @@ app.get("/api/gallery", async (req: Request, res: Response) => {
 app.get("/api/categories", async (req: Request, res: Response) => {
   try {
     const { type } = req.query;
-    const query: any = {};
-    if (type) query.type = type;
-    const categories = await Category.find(query).sort({ name: 1 });
+    let categories: any[] = [];
+
+    if (isMongoDBConnected()) {
+      try {
+        const query: any = {};
+        if (type) query.type = type;
+        categories = await Category.find(query).sort({ name: 1 });
+      } catch (dbErr) {
+        console.warn("MongoDB categories query failed:", dbErr);
+      }
+    }
+
+    if (!categories || categories.length === 0) {
+      // Gather unique categories from in-memory content
+      const projectCats = Array.from(new Set(inMemoryProjects.map((p) => p.category).filter(Boolean)));
+      const blogCats = Array.from(new Set(inMemoryBlogs.map((b) => b.category).filter(Boolean)));
+      const set = type === "project" ? projectCats : (type === "blog" ? blogCats : [...projectCats, ...blogCats]);
+      categories = set.map((cat, idx) => ({
+        _id: `cat-${idx}`,
+        name: cat,
+        slug: cat.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        type: type || "blog",
+      }));
+    }
+
     return res.json(categories);
   } catch (err) {
     console.error("Error fetching categories:", err);
@@ -225,6 +404,797 @@ app.get("/api/seo/:page", async (req: Request, res: Response) => {
   }
 });
 
+// ==========================================
+// SITE SETTINGS, INQUIRIES & LIKES IN-MEMORY FALLBACKS
+// ==========================================
+const defaultSocialLinks = {
+  github: "https://github.com/BCABro-9667",
+  linkedin: "https://www.linkedin.com/in/avdhesh-kumar-72b9a72b8/",
+  twitter: "https://x.com/Avdheshkumar00",
+  instagram: "https://www.instagram.com/avdhesh_kumar__9667",
+  youtube: "https://youtube.com/@BCABRO",
+  facebook: "https://facebook.com",
+  email: "avdhesh6968@gmail.com",
+  phone: "+91 9667086968",
+  location: "Gurugram, Haryana, India",
+  statusText: "Open to Full-Time & Freelance Roles",
+};
+
+let inMemorySiteSettings = {
+  key: "portfolio_settings",
+  resumeUrl: "",
+  resumeFileName: "Avdhesh_Kumar_Resume.pdf",
+  resumeUpdatedAt: new Date(),
+  socialLinks: { ...defaultSocialLinks },
+};
+
+const inMemoryInquiries: any[] = [
+  {
+    _id: "inq_sample_1",
+    type: "contact",
+    name: "Vikram Malhotra",
+    email: "vikram.m@techcorp.io",
+    subject: "Full-Stack Web App Development Project",
+    message: "Hi Avdhesh, I came across your portfolio and was thoroughly impressed by your BCA Point and BiteFlow projects. We have an upcoming client portal project and would love to discuss your availability for a contract or full-time role.",
+    status: "unread",
+    metadata: { source: "Contact Page Form" },
+    createdAt: new Date(Date.now() - 2 * 3600 * 1000),
+    updatedAt: new Date(Date.now() - 2 * 3600 * 1000),
+  },
+  {
+    _id: "lead_sample_2",
+    type: "popup",
+    name: "Ananya Sharma",
+    email: "ananya.sharma@designlabs.co",
+    subject: "Stay in Touch Popup Subscription",
+    message: "Subscribed via Stay Connected popup modal to receive new engineering essays and tech case studies.",
+    status: "unread",
+    metadata: { source: "Stay Connected Popup" },
+    createdAt: new Date(Date.now() - 6 * 3600 * 1000),
+    updatedAt: new Date(Date.now() - 6 * 3600 * 1000),
+  },
+  {
+    _id: "fb_sample_3",
+    type: "feedback",
+    name: "Rohan Verma",
+    email: "rohan.v@devcommunity.org",
+    subject: "Feedback: Portfolio UI (5★)",
+    message: "The neo-brutalist aesthetic with #D4F050 accent and mascot interactions is exceptional! Super fast loading speed as well.",
+    rating: 5,
+    category: "Design & UX",
+    status: "read",
+    metadata: { source: "Feedback Modal" },
+    createdAt: new Date(Date.now() - 24 * 3600 * 1000),
+    updatedAt: new Date(Date.now() - 24 * 3600 * 1000),
+  },
+];
+const inMemoryLikes: Record<string, number> = {
+  "1": 42,
+  "2": 37,
+  "3": 29,
+  "4": 31,
+  "5": 19,
+  "blog-1": 84,
+  "blog-2": 67,
+  "blog-3": 53,
+  "blog-4": 49,
+};
+
+const inMemoryProjects: any[] = [
+  {
+    _id: "proj-1",
+    id: "1",
+    title: "BCA Point – BCA Notes, Syllabus & Study Portal",
+    slug: "bca-point",
+    shortDescription: "A modern web portal for BCA students offering semester-wise notes, previous year question papers, syllabus, and study resources.",
+    description: "A comprehensive academic portal engineered specifically for BCA students. Features an organized directory structure covering all 6 semesters, live search, instant PDF previews, and question paper archives.\nIntegrated clean UI built with React and Tailwind CSS.\nResponsive on all devices with dark/cream theme contrast.",
+    featuredImage: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "BCA Point preview",
+    category: "E-Commerce",
+    keywords: ["Education", "React", "Tailwind", "Full-Stack", "BCA"],
+    tags: ["React", "Node.js", "Express", "MongoDB", "Tailwind CSS"],
+    techStack: ["React", "Node.js", "Express", "MongoDB", "Tailwind CSS"],
+    liveUrl: "https://bcapoint.in",
+    githubUrl: "https://github.com/BCABro-9667",
+    status: "published",
+    likes: 42,
+    publishedAt: new Date(),
+    createdAt: new Date(),
+  },
+  {
+    _id: "proj-2",
+    id: "2",
+    title: "BiteFlow – Modern Food Delivery & Ordering System",
+    slug: "biteflow",
+    shortDescription: "A full-featured food delivery web application with real-time cart, interactive menu, order tracking, and clean checkout flow.",
+    description: "Designed and engineered an end-to-end food ordering platform with real-time state management.\nIncludes categorised restaurant menus, customizable dish addons, live subtotal computation, and simulated delivery courier tracking.",
+    featuredImage: "https://images.unsplash.com/photo-1526367790999-0150786686a2?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "BiteFlow preview",
+    category: "Landing Page",
+    keywords: ["Food Delivery", "React", "TypeScript", "Tailwind CSS"],
+    tags: ["React", "TypeScript", "Tailwind CSS", "Express", "MongoDB"],
+    techStack: ["React", "TypeScript", "Tailwind CSS", "Express", "MongoDB"],
+    liveUrl: "https://biteflow-preview.netlify.app",
+    githubUrl: "https://github.com/BCABro-9667",
+    status: "published",
+    likes: 37,
+    publishedAt: new Date(),
+    createdAt: new Date(),
+  },
+  {
+    _id: "proj-3",
+    id: "3",
+    title: "DevHire – Developer Job & Talent Board",
+    slug: "devhire",
+    shortDescription: "A curated job board connecting startups with top frontend, backend, and full-stack developers globally.",
+    description: "Created a scalable developer talent platform featuring robust filtering by experience level, remote availability, tech stack, and compensation.\nIntegrated company profiles and applicant submission flows.",
+    featuredImage: "https://images.unsplash.com/photo-1499750310107-5fef28a66643?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "DevHire preview",
+    category: "Task Management",
+    keywords: ["Job Board", "Next.js", "MongoDB", "Tailwind CSS"],
+    tags: ["Next.js", "TypeScript", "Tailwind CSS", "MongoDB", "Express"],
+    techStack: ["Next.js", "TypeScript", "Tailwind CSS", "MongoDB", "Express"],
+    liveUrl: "https://devhire-jobs.netlify.app",
+    githubUrl: "https://github.com/BCABro-9667",
+    status: "published",
+    likes: 29,
+    publishedAt: new Date(),
+    createdAt: new Date(),
+  },
+  {
+    _id: "proj-4",
+    id: "4",
+    title: "CryptoTrack – Real-Time Crypto Analytics Dashboard",
+    slug: "cryptotrack",
+    shortDescription: "Live cryptocurrency pricing dashboard with interactive price charts, portfolio tracking, and market analytics.",
+    description: "High-performance financial dashboard rendering real-time candlestick charts, 24-hour volume changes, and responsive coin comparisons using public cryptocurrency APIs.",
+    featuredImage: "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "CryptoTrack preview",
+    category: "Mobile Apps",
+    keywords: ["Crypto", "Analytics", "React", "Chart.js"],
+    tags: ["React", "Chart.js", "Tailwind CSS", "REST API"],
+    techStack: ["React", "Chart.js", "Tailwind CSS", "REST API"],
+    liveUrl: "https://cryptotrack-live.netlify.app",
+    githubUrl: "https://github.com/BCABro-9667",
+    status: "published",
+    likes: 31,
+    publishedAt: new Date(),
+    createdAt: new Date(),
+  },
+  {
+    _id: "proj-5",
+    id: "5",
+    title: "CloudDrop – Drag & Drop Secure File Sharing",
+    slug: "clouddrop",
+    shortDescription: "Fast, minimal file sharing tool allowing users to upload documents, generate expiring links, and share files securely.",
+    description: "Secure file transfer platform with drag-and-drop file upload, size verification, MIME-type protection, and link generation with customizable expiration times.",
+    featuredImage: "https://images.unsplash.com/photo-1544396821-4dd40b938ad3?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "CloudDrop preview",
+    category: "Community",
+    keywords: ["File Sharing", "Node.js", "Express", "Multer"],
+    tags: ["Node.js", "Express", "Multer", "React", "Tailwind CSS"],
+    techStack: ["Node.js", "Express", "Multer", "React", "Tailwind CSS"],
+    liveUrl: "https://clouddrop-share.netlify.app",
+    githubUrl: "https://github.com/BCABro-9667",
+    status: "published",
+    likes: 19,
+    publishedAt: new Date(),
+    createdAt: new Date(),
+  },
+];
+
+const inMemoryBlogs: any[] = [
+  {
+    _id: "blog-1",
+    id: "blog-1",
+    title: "Mastering Full-Stack React & Node Architecture in 2025",
+    slug: "mastering-full-stack-react-node",
+    excerpt: "Deep dive into building robust web applications using React on the frontend and Node.js/Express with MongoDB on the backend.",
+    featuredImage: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "React and Node.js code illustration",
+    category: "Architecture",
+    keywords: ["React", "Node.js", "Full-Stack", "Web Architecture"],
+    tags: ["React", "Node.js", "Architecture", "Express", "TypeScript"],
+    author: "Avdhesh Kumar",
+    content: `Building modern web applications requires a holistic view of the entire stack. In 2025, the boundary between client and server continues to evolve, yet the core principles of speed, maintainability, and clean code remain paramount.\n\n### 1. The Core Architecture\nA solid full-stack project starts with clear separation of concerns: declarative user interfaces on the frontend paired with predictable, stateless REST APIs on the backend.\n\n### 2. State & Data Flow\nManaging server state with real-time optimistic updates ensures that users perceive instant responsiveness without waiting on network roundtrips.\n\n### 3. Conclusion\nBy focusing on clean component hierarchies, robust error handling, and scalable database queries, full-stack developers can build experiences that scale seamlessly.`,
+    status: "published",
+    likes: 84,
+    publishedAt: new Date(),
+    createdAt: new Date(),
+  },
+  {
+    _id: "blog-2",
+    id: "blog-2",
+    title: "Why Tailwind CSS with Next.js is the Ultimate DX Combo",
+    slug: "why-tailwind-css-nextjs-dx-combo",
+    excerpt: "How utility-first styling combined with server-rendered React components supercharges frontend engineering velocity and design consistency.",
+    featuredImage: "https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "Tailwind CSS with Next.js code editor",
+    category: "Frontend",
+    keywords: ["Tailwind CSS", "Next.js", "Developer Experience", "Design Systems"],
+    tags: ["Tailwind CSS", "Next.js", "Frontend", "CSS"],
+    author: "Avdhesh Kumar",
+    content: `Developer experience (DX) is often the defining factor in shipping high-quality software on time. In this article, we explore why pairing utility-first CSS with modern React workflows drastically reduces context-switching and eliminates dead CSS.\n\n### Instant Feedback Loops\nWith utility classes colocated right next to markup, styling is predictable, reusable, and optimized at build time.\n\n### Consistency Across Design Tokens\nTailwind enforces disciplined scales for typography, color palettes, and spacing, ensuring that visual polish stays coherent across every page.`,
+    status: "published",
+    likes: 67,
+    publishedAt: new Date(),
+    createdAt: new Date(),
+  },
+  {
+    _id: "blog-3",
+    id: "blog-3",
+    title: "Demystifying Asynchronous Programming & Event Loops in Node.js",
+    slug: "demystifying-async-programming-nodejs",
+    excerpt: "A practical guide to the Node.js event loop, microtask queues, non-blocking I/O, and writing high-throughput backend services.",
+    featuredImage: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "Node.js code and servers",
+    category: "Backend",
+    keywords: ["Node.js", "Event Loop", "Asynchronous", "JavaScript", "Backend"],
+    tags: ["Node.js", "Async", "JavaScript", "Backend", "Performance"],
+    author: "Avdhesh Kumar",
+    content: `Node.js has powered millions of concurrent servers thanks to its single-threaded, non-blocking event-driven runtime.\n\nUnderstanding how libuv manages phases—timers, pending callbacks, poll, check, and close callbacks—empowers developers to write backends that never starve the thread and handle thousands of concurrent queries smoothly.`,
+    status: "published",
+    likes: 53,
+    publishedAt: new Date(),
+    createdAt: new Date(),
+  },
+  {
+    _id: "blog-4",
+    id: "blog-4",
+    title: "From Zero to Production: Deploying Scalable Web Applications",
+    slug: "zero-to-production-deploying-scalable-web-apps",
+    excerpt: "Step-by-step checklist for building, optimizing, and deploying production-ready applications with zero downtime.",
+    featuredImage: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "DevOps and deployment pipeline",
+    category: "DevOps",
+    keywords: ["DevOps", "Deployment", "CI/CD", "Production", "Cloud"],
+    tags: ["DevOps", "Deployment", "Cloud", "Full-Stack"],
+    author: "Avdhesh Kumar",
+    content: `Shipping to production is where software meets reality. Beyond writing clean code, engineering production readiness requires bundle optimization, asset hashing, security headers, and smooth fallback handling for client-side routing.\n\nThis guide covers the automated pipelines that take code from local development all the way to high-availability deployment.`,
+    status: "published",
+    likes: 49,
+    publishedAt: new Date(),
+    createdAt: new Date(),
+  },
+];
+
+const inMemoryGallery: any[] = [
+  {
+    _id: "gal-1",
+    id: "gal-1",
+    title: "College Chess Championship Trophy",
+    image: "https://images.unsplash.com/photo-1529699211952-734e80c4d42b?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "Chess championship trophy and tournament board",
+    category: "Chess",
+    status: "published",
+    createdAt: new Date(),
+  },
+  {
+    _id: "gal-2",
+    id: "gal-2",
+    title: "Inter-College Rapid Chess Tournament 1st Place",
+    image: "https://images.unsplash.com/photo-1586165368502-1bad197a6461?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "Rapid chess championship",
+    category: "Chess",
+    status: "published",
+    createdAt: new Date(),
+  },
+  {
+    _id: "gal-3",
+    id: "gal-3",
+    title: "Reachcure Frontend Internship Completion",
+    image: "https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "Frontend internship certificate",
+    category: "Certificates",
+    status: "published",
+    createdAt: new Date(),
+  },
+  {
+    _id: "gal-4",
+    id: "gal-4",
+    title: "Estovir Technologies Internship Excellence",
+    image: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "Estovir internship certificate",
+    category: "Certificates",
+    status: "published",
+    createdAt: new Date(),
+  },
+];
+
+// --- Public Site Settings (Resume & Social Links) ---
+app.get("/api/settings", async (req: Request, res: Response) => {
+  try {
+    let settings = null;
+    if (isMongoDBConnected()) {
+      settings = await SiteSettings.findOne({ key: "portfolio_settings" });
+    }
+    if (!settings) {
+      settings = inMemorySiteSettings;
+    }
+    return res.json({ success: true, settings });
+  } catch (err) {
+    console.error("Error fetching site settings:", err);
+    return res.json({ success: true, settings: inMemorySiteSettings });
+  }
+});
+
+// --- Public Contact Form Submission ---
+app.post("/api/contact", async (req: Request, res: Response) => {
+  try {
+    const { name, email, subject, message, metadata } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: "Email is required" });
+    }
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    const newInquiry = {
+      type: "contact",
+      name: (name || "Anonymous").trim(),
+      email: email.trim().toLowerCase(),
+      subject: (subject || "General Inquiry").trim(),
+      message: message.trim(),
+      status: "unread",
+      metadata: metadata || {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    let savedItem: any = {
+      ...newInquiry,
+      _id: "inq_" + Date.now(),
+    };
+    inMemoryInquiries.unshift(savedItem);
+
+    if (isMongoDBConnected()) {
+      try {
+        const dbItem = await Inquiry.create(newInquiry);
+        savedItem = dbItem;
+      } catch (dbErr) {
+        console.warn("MongoDB save for contact inquiry failed, kept in memory:", dbErr);
+      }
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Your message has been sent successfully! Avdhesh will get back to you soon.",
+      data: savedItem,
+    });
+  } catch (err: any) {
+    console.error("Error submitting contact form:", err);
+    return res.status(500).json({ error: "Failed to submit message", details: err.message });
+  }
+});
+
+// --- Public Popup Lead (Stay Connected) ---
+app.post("/api/popup-lead", async (req: Request, res: Response) => {
+  try {
+    const { email, name, metadata } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: "Email is required" });
+    }
+
+    const newLead = {
+      type: "popup",
+      name: (name || "Newsletter Subscriber").trim(),
+      email: email.trim().toLowerCase(),
+      subject: "Stay in Touch Popup Subscription",
+      message: "Subscribed via Stay Connected popup modal",
+      status: "unread",
+      metadata: metadata || {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    let savedItem: any = {
+      ...newLead,
+      _id: "lead_" + Date.now(),
+    };
+    inMemoryInquiries.unshift(savedItem);
+
+    if (isMongoDBConnected()) {
+      try {
+        const dbItem = await Inquiry.create(newLead);
+        savedItem = dbItem;
+      } catch (dbErr) {
+        console.warn("MongoDB save for popup lead failed, kept in memory:", dbErr);
+      }
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Thank you for subscribing!",
+      data: savedItem,
+    });
+  } catch (err: any) {
+    console.error("Error saving popup lead:", err);
+    return res.status(500).json({ error: "Failed to save subscription" });
+  }
+});
+
+// --- Public Feedback Submission ---
+app.post("/api/feedback", async (req: Request, res: Response) => {
+  try {
+    const { name, email, rating, category, message, metadata } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: "Feedback comment is required" });
+    }
+
+    const newFeedback = {
+      type: "feedback",
+      name: (name || "Portfolio Visitor").trim(),
+      email: (email || "visitor@feedback.com").trim().toLowerCase(),
+      subject: `Feedback: ${category || "General"} (${rating || 5}★)`,
+      message: message.trim(),
+      rating: Number(rating) || 5,
+      category: category || "General",
+      status: "unread",
+      metadata: metadata || {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    let savedItem: any = {
+      ...newFeedback,
+      _id: "fb_" + Date.now(),
+    };
+    inMemoryInquiries.unshift(savedItem);
+
+    if (isMongoDBConnected()) {
+      try {
+        const dbItem = await Inquiry.create(newFeedback);
+        savedItem = dbItem;
+      } catch (dbErr) {
+        console.warn("MongoDB save for feedback failed, kept in memory:", dbErr);
+      }
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Thank you for your valuable feedback!",
+      data: savedItem,
+    });
+  } catch (err: any) {
+    console.error("Error saving feedback:", err);
+    return res.status(500).json({ error: "Failed to submit feedback" });
+  }
+});
+
+// --- Public Likes API (Project & Blog) ---
+app.get("/api/likes", async (req: Request, res: Response) => {
+  try {
+    const likesMap: Record<string, number> = { ...inMemoryLikes };
+
+    if (isMongoDBConnected()) {
+      const [projects, blogs] = await Promise.all([
+        Project.find().select("_id slug likes"),
+        BlogPost.find().select("_id slug likes"),
+      ]);
+      projects.forEach((p: any) => {
+        if (p.likes !== undefined) {
+          likesMap[p._id.toString()] = p.likes;
+          if (p.slug) likesMap[p.slug] = p.likes;
+        }
+      });
+      blogs.forEach((b: any) => {
+        if (b.likes !== undefined) {
+          likesMap[b._id.toString()] = b.likes;
+          if (b.slug) likesMap[b.slug] = b.likes;
+        }
+      });
+    }
+
+    return res.json({ success: true, likes: likesMap });
+  } catch (err) {
+    console.error("Error fetching likes:", err);
+    return res.json({ success: true, likes: inMemoryLikes });
+  }
+});
+
+app.post("/api/projects/:id/like", async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id;
+    const action = req.body?.action || "like";
+    const delta = action === "unlike" ? -1 : 1;
+
+    let current = inMemoryLikes[id] !== undefined ? inMemoryLikes[id] : 0;
+    let newLikes = Math.max(0, current + delta);
+    inMemoryLikes[id] = newLikes;
+
+    if (isMongoDBConnected()) {
+      let doc: any = null;
+      if (id.match(/^[0-9a-fA-F]{24}$/)) {
+        doc = await Project.findByIdAndUpdate(id, { $inc: { likes: delta } }, { new: true });
+      }
+      if (!doc) {
+        doc = await Project.findOneAndUpdate({ slug: id }, { $inc: { likes: delta } }, { new: true });
+      }
+      if (doc) {
+        if (doc.likes < 0) {
+          doc.likes = 0;
+          await doc.save();
+        }
+        newLikes = Math.max(0, doc.likes);
+        inMemoryLikes[id] = newLikes;
+        if (doc.slug) inMemoryLikes[doc.slug] = newLikes;
+      }
+    }
+
+    return res.json({ success: true, likes: newLikes });
+  } catch (err) {
+    console.error("Error toggling project like:", err);
+    const id = req.params.id;
+    const action = req.body?.action || "like";
+    const delta = action === "unlike" ? -1 : 1;
+    const current = inMemoryLikes[id] !== undefined ? inMemoryLikes[id] : 0;
+    inMemoryLikes[id] = Math.max(0, current + delta);
+    return res.json({ success: true, likes: inMemoryLikes[id] });
+  }
+});
+
+app.post("/api/blog/:id/like", async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id;
+    const action = req.body?.action || "like";
+    const delta = action === "unlike" ? -1 : 1;
+
+    let current = inMemoryLikes[id] !== undefined ? inMemoryLikes[id] : 0;
+    let newLikes = Math.max(0, current + delta);
+    inMemoryLikes[id] = newLikes;
+
+    if (isMongoDBConnected()) {
+      let doc: any = null;
+      if (id.match(/^[0-9a-fA-F]{24}$/)) {
+        doc = await BlogPost.findByIdAndUpdate(id, { $inc: { likes: delta } }, { new: true });
+      }
+      if (!doc) {
+        doc = await BlogPost.findOneAndUpdate({ slug: id }, { $inc: { likes: delta } }, { new: true });
+      }
+      if (doc) {
+        if (doc.likes < 0) {
+          doc.likes = 0;
+          await doc.save();
+        }
+        newLikes = Math.max(0, doc.likes);
+        inMemoryLikes[id] = newLikes;
+        if (doc.slug) inMemoryLikes[doc.slug] = newLikes;
+      }
+    }
+
+    return res.json({ success: true, likes: newLikes });
+  } catch (err) {
+    console.error("Error toggling blog like:", err);
+    const id = req.params.id;
+    const action = req.body?.action || "like";
+    const delta = action === "unlike" ? -1 : 1;
+    const current = inMemoryLikes[id] !== undefined ? inMemoryLikes[id] : 0;
+    inMemoryLikes[id] = Math.max(0, current + delta);
+    return res.json({ success: true, likes: inMemoryLikes[id] });
+  }
+});
+
+// ==========================================
+// BUY ME A CHAI & PHONEPE PAYMENT ROUTES
+// ==========================================
+
+// In-memory fallback in case MongoDB is temporarily disconnected or using initial session
+const inMemoryDonations: any[] = [];
+
+// Helper to determine base URL
+function getAppBaseUrl(req: Request): string {
+  if (process.env.APP_URL && !process.env.APP_URL.includes("localhost")) {
+    return process.env.APP_URL.replace(/\/$/, "");
+  }
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+  const host = req.headers["x-forwarded-host"] || req.get("host") || "localhost:3000";
+  return `${protocol}://${host}`;
+}
+
+// 1. GET /api/donations/supporters - List of verified supporters
+app.get("/api/donations/supporters", async (req: Request, res: Response) => {
+  try {
+    let completedDonations: any[] = [];
+
+    if (isMongoDBConnected()) {
+      completedDonations = await Donation.find({ status: "COMPLETED" })
+        .sort({ createdAt: -1 })
+        .lean();
+    } else {
+      completedDonations = inMemoryDonations
+        .filter((d) => d.status === "COMPLETED")
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
+
+    const totalSupporters = completedDonations.length;
+    const totalAmount = completedDonations.reduce((acc, d) => acc + (d.amount || 0), 0);
+    
+    // Find absolute top supporter by highest amount
+    let topSupporter = null;
+    if (completedDonations.length > 0) {
+      topSupporter = [...completedDonations].sort((a, b) => b.amount - a.amount)[0];
+    }
+
+    return res.json({
+      success: true,
+      supporters: completedDonations,
+      stats: {
+        totalSupporters,
+        totalAmount,
+        topSupporter,
+      },
+    });
+  } catch (err: any) {
+    console.error("Error fetching supporters:", err);
+    return res.status(500).json({ error: "Failed to fetch supporters list" });
+  }
+});
+
+// 2. POST /api/razorpay/create-order - Create Razorpay Order
+app.post("/api/razorpay/create-order", async (req: Request, res: Response) => {
+  try {
+    const { supporterName, message, amount, avatar } = req.body;
+    const parsedAmount = Number(amount);
+    if (!parsedAmount || isNaN(parsedAmount) || parsedAmount < 1) {
+      return res.status(400).json({ error: "Please enter a valid donation amount of at least ₹1." });
+    }
+
+    const cleanName = (supporterName || "Anonymous").toString().trim().slice(0, 50);
+    const cleanMessage = (message || "Keep building great stuff! ☕").toString().trim().slice(0, 300);
+    const cleanAvatar = (avatar || "chai-cup").toString().trim().slice(0, 40);
+
+    const razorpay = getRazorpayInstance();
+    const amountInPaise = Math.round(parsedAmount * 100);
+
+    const orderOptions = {
+      amount: amountInPaise,
+      currency: "INR",
+      receipt: `rcpt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      notes: {
+        supporterName: cleanName,
+        message: cleanMessage,
+      },
+    };
+
+    const order = await razorpay.orders.create(orderOptions);
+
+    const merchantTransactionId = order.id; // use Razorpay order id as transaction reference
+
+    const newDonationData = {
+      supporterName: cleanName,
+      message: cleanMessage,
+      amount: parsedAmount,
+      avatar: cleanAvatar,
+      merchantTransactionId,
+      status: "PENDING",
+      paymentMethod: "RAZORPAY",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    if (isMongoDBConnected()) {
+      await Donation.create(newDonationData);
+    } else {
+      inMemoryDonations.push(newDonationData);
+    }
+
+    return res.json({
+      success: true,
+      orderId: order.id,
+      amount: amountInPaise,
+      currency: order.currency,
+      keyId: process.env.RAZORPAY_KEY_ID || "rzp_test_TfKwgALCzFrTl9",
+      supporterName: cleanName,
+      merchantTransactionId,
+    });
+  } catch (err: any) {
+    console.error("Error creating Razorpay order:", err);
+    return res.status(500).json({ error: "Failed to create Razorpay order", details: err.message });
+  }
+});
+
+// 3. POST /api/razorpay/verify - Verify Razorpay payment signature
+app.post("/api/razorpay/verify", async (req: Request, res: Response) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ error: "Missing payment verification parameters." });
+    }
+
+    const isValid = verifyRazorpaySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature);
+    if (!isValid) {
+      return res.status(400).json({ success: false, error: "Invalid payment signature verification." });
+    }
+
+    let donation: any = null;
+    if (isMongoDBConnected()) {
+      donation = await Donation.findOneAndUpdate(
+        { merchantTransactionId: razorpay_order_id },
+        { status: "COMPLETED", phonepeTransactionId: razorpay_payment_id, updatedAt: new Date() },
+        { new: true }
+      );
+    } else {
+      const inMem = inMemoryDonations.find((d) => d.merchantTransactionId === razorpay_order_id);
+      if (inMem) {
+        inMem.status = "COMPLETED";
+        inMem.phonepeTransactionId = razorpay_payment_id;
+        donation = inMem;
+      }
+    }
+
+    return res.json({
+      success: true,
+      donation,
+      message: "Payment verified successfully via Razorpay!",
+    });
+  } catch (err: any) {
+    console.error("Error verifying Razorpay payment:", err);
+    return res.status(500).json({ error: "Payment verification failed", details: err.message });
+  }
+});
+
+// 4. GET /api/donations/verify/:txId - Explicit status verification
+app.get("/api/donations/verify/:txId", async (req: Request, res: Response) => {
+  try {
+    const { txId } = req.params;
+    let donation: any = null;
+
+    if (isMongoDBConnected()) {
+      donation = await Donation.findOne({ merchantTransactionId: txId });
+    } else {
+      donation = inMemoryDonations.find((d) => d.merchantTransactionId === txId);
+    }
+
+    if (!donation) {
+      return res.status(404).json({ error: "Donation record not found." });
+    }
+
+    return res.json({
+      success: true,
+      donation,
+      status: donation.status,
+    });
+  } catch (err: any) {
+    console.error("Error verifying donation:", err);
+    return res.status(500).json({ error: "Verification check failed" });
+  }
+});
+
+// 5. POST /api/donations/simulate-success - Sandbox test payment simulation
+app.post("/api/donations/simulate-success", async (req: Request, res: Response) => {
+  try {
+    const { txId } = req.body;
+    if (!txId) return res.status(400).json({ error: "Transaction ID is required." });
+
+    let updatedDonation: any = null;
+    const rzpPayId = `pay_rzp_${Date.now()}`;
+
+    if (isMongoDBConnected()) {
+      updatedDonation = await Donation.findOneAndUpdate(
+        { merchantTransactionId: txId },
+        { status: "COMPLETED", phonepeTransactionId: rzpPayId, updatedAt: new Date() },
+        { new: true }
+      );
+    } else {
+      const inMem = inMemoryDonations.find((d) => d.merchantTransactionId === txId);
+      if (inMem) {
+        inMem.status = "COMPLETED";
+        inMem.phonepeTransactionId = rzpPayId;
+        updatedDonation = inMem;
+      }
+    }
+
+    return res.json({
+      success: true,
+      donation: updatedDonation,
+      message: "Test Razorpay payment successfully verified!",
+    });
+  } catch (err: any) {
+    console.error("Simulation error:", err);
+    return res.status(500).json({ error: "Failed to simulate verification" });
+  }
+});
+
 
 // ==========================================
 // ADMIN CMS API ROUTES (Protected)
@@ -242,7 +1212,12 @@ app.get("/api/admin/stats", verifyAdminToken, async (req: AdminAuthRequest, res:
       draftBlogs,
       totalGallery,
       recentProjects,
-      recentBlogs
+      recentBlogs,
+      totalInquiries,
+      unreadInquiries,
+      contactCount,
+      popupCount,
+      feedbackCount
     ] = await Promise.all([
       Project.countDocuments(),
       Project.countDocuments({ status: "published" }),
@@ -253,6 +1228,11 @@ app.get("/api/admin/stats", verifyAdminToken, async (req: AdminAuthRequest, res:
       Gallery.countDocuments(),
       Project.find().sort({ createdAt: -1 }).limit(5),
       BlogPost.find().sort({ createdAt: -1 }).limit(5),
+      Inquiry.countDocuments(),
+      Inquiry.countDocuments({ status: "unread" }),
+      Inquiry.countDocuments({ type: "contact" }),
+      Inquiry.countDocuments({ type: "popup" }),
+      Inquiry.countDocuments({ type: "feedback" }),
     ]);
 
     return res.json({
@@ -264,6 +1244,11 @@ app.get("/api/admin/stats", verifyAdminToken, async (req: AdminAuthRequest, res:
         publishedBlogs,
         draftBlogs,
         totalGallery,
+        totalInquiries,
+        unreadInquiries,
+        contactCount,
+        popupCount,
+        feedbackCount,
       },
       recentContent: {
         projects: recentProjects,
@@ -309,6 +1294,22 @@ app.get("/api/admin/projects", verifyAdminToken, async (req: AdminAuthRequest, r
 app.post("/api/admin/projects", verifyAdminToken, async (req: AdminAuthRequest, res: Response) => {
   try {
     const data = req.body;
+    let baseSlug = data.slug || (data.title ? data.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") : "project");
+    if (!baseSlug) baseSlug = "project";
+    let candidateSlug = baseSlug;
+    let counter = 1;
+    while (await Project.findOne({ slug: candidateSlug })) {
+      counter++;
+      candidateSlug = `${baseSlug}-${counter}`;
+    }
+    data.slug = candidateSlug;
+
+    if (!data.imageAlt) {
+      data.imageAlt = data.title || "Project preview";
+    }
+    if (!data.featuredImage) {
+      data.featuredImage = "";
+    }
     if (data.status === "published" && !data.publishedAt) {
       data.publishedAt = new Date();
     }
@@ -323,6 +1324,19 @@ app.post("/api/admin/projects", verifyAdminToken, async (req: AdminAuthRequest, 
 app.put("/api/admin/projects/:id", verifyAdminToken, async (req: AdminAuthRequest, res: Response) => {
   try {
     const data = req.body;
+    let baseSlug = data.slug || (data.title ? data.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") : "project");
+    if (!baseSlug) baseSlug = "project";
+    let candidateSlug = baseSlug;
+    let counter = 1;
+    while (await Project.findOne({ slug: candidateSlug, _id: { $ne: req.params.id } })) {
+      counter++;
+      candidateSlug = `${baseSlug}-${counter}`;
+    }
+    data.slug = candidateSlug;
+
+    if (!data.imageAlt && data.title) {
+      data.imageAlt = data.title || "Project preview";
+    }
     if (data.status === "published" && !data.publishedAt) {
       data.publishedAt = new Date();
     }
@@ -359,6 +1373,22 @@ app.get("/api/admin/blog", verifyAdminToken, async (req: AdminAuthRequest, res: 
 app.post("/api/admin/blog", verifyAdminToken, async (req: AdminAuthRequest, res: Response) => {
   try {
     const data = req.body;
+    let baseSlug = data.slug || (data.title ? data.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") : "blog-post");
+    if (!baseSlug) baseSlug = "blog-post";
+    let candidateSlug = baseSlug;
+    let counter = 1;
+    while (await BlogPost.findOne({ slug: candidateSlug })) {
+      counter++;
+      candidateSlug = `${baseSlug}-${counter}`;
+    }
+    data.slug = candidateSlug;
+
+    if (!data.imageAlt) {
+      data.imageAlt = data.title || "Blog cover";
+    }
+    if (!data.featuredImage) {
+      data.featuredImage = "";
+    }
     if (data.status === "published" && !data.publishedAt) {
       data.publishedAt = new Date();
     }
@@ -373,6 +1403,19 @@ app.post("/api/admin/blog", verifyAdminToken, async (req: AdminAuthRequest, res:
 app.put("/api/admin/blog/:id", verifyAdminToken, async (req: AdminAuthRequest, res: Response) => {
   try {
     const data = req.body;
+    let baseSlug = data.slug || (data.title ? data.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") : "blog-post");
+    if (!baseSlug) baseSlug = "blog-post";
+    let candidateSlug = baseSlug;
+    let counter = 1;
+    while (await BlogPost.findOne({ slug: candidateSlug, _id: { $ne: req.params.id } })) {
+      counter++;
+      candidateSlug = `${baseSlug}-${counter}`;
+    }
+    data.slug = candidateSlug;
+
+    if (!data.imageAlt && data.title) {
+      data.imageAlt = data.title || "Blog cover";
+    }
     if (data.status === "published" && !data.publishedAt) {
       data.publishedAt = new Date();
     }
@@ -451,14 +1494,32 @@ app.get("/api/admin/categories", verifyAdminToken, async (req: AdminAuthRequest,
 
 app.post("/api/admin/categories", verifyAdminToken, async (req: AdminAuthRequest, res: Response) => {
   try {
-    const { name, slug, type } = req.body;
-    const existing = await Category.findOne({ slug, type });
+    let { name, slug, type } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: "Category name is required." });
+    }
+    name = name.trim();
+    if (!slug || !slug.trim()) {
+      slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    } else {
+      slug = slug.trim().toLowerCase();
+    }
+    type = type || "blog";
+
+    const safeName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    let existing = await Category.findOne({
+      $or: [
+        { slug, type },
+        { name: new RegExp(`^${safeName}$`, "i"), type }
+      ]
+    });
     if (existing) {
-      return res.status(400).json({ error: "Category with this slug and type already exists." });
+      return res.status(200).json(existing);
     }
     const cat = await Category.create({ name, slug, type });
     return res.status(201).json(cat);
   } catch (err: any) {
+    console.error("Create category error:", err);
     return res.status(400).json({ error: err.message || "Failed to create category" });
   }
 });
@@ -493,6 +1554,239 @@ app.put("/api/admin/seo/:page", verifyAdminToken, async (req: AdminAuthRequest, 
     return res.json(updated);
   } catch (err: any) {
     return res.status(400).json({ error: err.message || "Failed to update SEO settings" });
+  }
+});
+
+// --- Site Settings Admin (Resume & Social Links) ---
+app.get("/api/admin/settings", verifyAdminToken, async (req: AdminAuthRequest, res: Response) => {
+  try {
+    let settings = null;
+    if (isMongoDBConnected()) {
+      settings = await SiteSettings.findOne({ key: "portfolio_settings" });
+    }
+    if (!settings) {
+      settings = inMemorySiteSettings;
+    }
+    return res.json({ success: true, settings });
+  } catch (err: any) {
+    return res.status(500).json({ error: "Failed to fetch settings" });
+  }
+});
+
+app.put("/api/admin/settings", verifyAdminToken, async (req: AdminAuthRequest, res: Response) => {
+  try {
+    const { resumeUrl, resumeFileName, socialLinks } = req.body;
+    const updateData: any = { updatedAt: new Date() };
+    if (resumeUrl !== undefined) updateData.resumeUrl = resumeUrl;
+    if (resumeFileName !== undefined) updateData.resumeFileName = resumeFileName;
+    if (resumeUrl) updateData.resumeUpdatedAt = new Date();
+    if (socialLinks) updateData.socialLinks = socialLinks;
+
+    let updated = null;
+    if (isMongoDBConnected()) {
+      updated = await SiteSettings.findOneAndUpdate(
+        { key: "portfolio_settings" },
+        { $set: updateData },
+        { new: true, upsert: true }
+      );
+    } else {
+      inMemorySiteSettings = {
+        ...inMemorySiteSettings,
+        ...updateData,
+        socialLinks: {
+          ...inMemorySiteSettings.socialLinks,
+          ...(socialLinks || {}),
+        },
+      };
+      updated = inMemorySiteSettings;
+    }
+
+    return res.json({ success: true, settings: updated });
+  } catch (err: any) {
+    console.error("Error updating site settings:", err);
+    return res.status(500).json({ error: "Failed to update settings" });
+  }
+});
+
+// Resume File Upload (PDF / Document)
+app.post("/api/admin/resume/upload", verifyAdminToken, upload.single("resume"), async (req: AdminAuthRequest, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No resume file provided." });
+    }
+
+    let fileUrl = "";
+    const originalName = req.file.originalname || "Avdhesh_Kumar_Resume.pdf";
+
+    // Attempt Cloudinary upload with auto/raw type for PDF
+    try {
+      const uploadResult = await uploadToCloudinary(req.file.buffer, "portfolio_resume", "auto");
+      fileUrl = uploadResult.secure_url;
+    } catch (cloudErr) {
+      console.warn("Cloudinary upload failed for resume, falling back to base64 data URI storage:", cloudErr);
+      const mime = req.file.mimetype || "application/pdf";
+      fileUrl = `data:${mime};base64,${req.file.buffer.toString("base64")}`;
+    }
+
+    // Update settings in database
+    const updatePayload = {
+      resumeUrl: fileUrl,
+      resumeFileName: originalName,
+      resumeUpdatedAt: new Date(),
+    };
+
+    if (isMongoDBConnected()) {
+      await SiteSettings.findOneAndUpdate(
+        { key: "portfolio_settings" },
+        { $set: updatePayload },
+        { upsert: true, new: true }
+      );
+    } else {
+      inMemorySiteSettings = {
+        ...inMemorySiteSettings,
+        ...updatePayload,
+      };
+    }
+
+    return res.json({
+      success: true,
+      resumeUrl: fileUrl,
+      resumeFileName: originalName,
+      message: "Resume updated successfully!",
+    });
+  } catch (err: any) {
+    console.error("Resume upload error:", err);
+    return res.status(500).json({ error: err.message || "Failed to upload resume file" });
+  }
+});
+
+// --- Admin Inquiries & Submissions CRUD ---
+app.get("/api/admin/inquiries", verifyAdminToken, async (req: AdminAuthRequest, res: Response) => {
+  try {
+    const { type, status, search } = req.query;
+    let list: any[] = [];
+
+    if (isMongoDBConnected()) {
+      try {
+        const query: any = {};
+        if (type && type !== "all") query.type = type;
+        if (status && status !== "all") query.status = status;
+        if (search) {
+          query.$or = [
+            { name: { $regex: String(search), $options: "i" } },
+            { email: { $regex: String(search), $options: "i" } },
+            { message: { $regex: String(search), $options: "i" } },
+            { subject: { $regex: String(search), $options: "i" } },
+          ];
+        }
+        list = await Inquiry.find(query).sort({ createdAt: -1 });
+      } catch (dbErr) {
+        console.warn("MongoDB find inquiries failed, falling back to memory:", dbErr);
+      }
+    }
+
+    // Merge any memory inquiries that aren't in the DB list
+    const existingIds = new Set(list.map((i: any) => String(i._id)));
+    for (const mem of inMemoryInquiries) {
+      if (!existingIds.has(String(mem._id))) {
+        let match = true;
+        if (type && type !== "all" && mem.type !== type) match = false;
+        if (status && status !== "all" && mem.status !== status) match = false;
+        if (search) {
+          const s = String(search).toLowerCase();
+          const matches =
+            (mem.name && mem.name.toLowerCase().includes(s)) ||
+            (mem.email && mem.email.toLowerCase().includes(s)) ||
+            (mem.message && mem.message.toLowerCase().includes(s)) ||
+            (mem.subject && mem.subject.toLowerCase().includes(s));
+          if (!matches) match = false;
+        }
+        if (match) {
+          list.push(mem);
+        }
+      }
+    }
+
+    // Sort descending by createdAt
+    list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+    // Compute stats from all available records
+    const allRecords = [...list];
+    for (const mem of inMemoryInquiries) {
+      if (!allRecords.some((r) => String(r._id) === String(mem._id))) {
+        allRecords.push(mem);
+      }
+    }
+
+    const total = allRecords.length;
+    const unread = allRecords.filter((i) => i.status === "unread").length;
+    const contacts = allRecords.filter((i) => i.type === "contact").length;
+    const popups = allRecords.filter((i) => i.type === "popup").length;
+    const feedbacks = allRecords.filter((i) => i.type === "feedback").length;
+
+    return res.json({
+      inquiries: list,
+      stats: { total, unread, contacts, popups, feedbacks },
+    });
+  } catch (err: any) {
+    console.error("Error fetching inquiries:", err);
+    return res.status(500).json({ error: "Failed to fetch inquiries" });
+  }
+});
+
+app.put("/api/admin/inquiries/:id/status", verifyAdminToken, async (req: AdminAuthRequest, res: Response) => {
+  try {
+    const { status } = req.body;
+    const validStatuses = ["unread", "read", "replied", "archived"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: "Invalid status value" });
+    }
+
+    let updated: any = null;
+    if (isMongoDBConnected()) {
+      try {
+        updated = await Inquiry.findByIdAndUpdate(
+          req.params.id,
+          { status, updatedAt: new Date() },
+          { new: true }
+        );
+      } catch (dbErr) {
+        console.warn("MongoDB update inquiry failed:", dbErr);
+      }
+    }
+
+    const memItem = inMemoryInquiries.find((i) => String(i._id) === String(req.params.id));
+    if (memItem) {
+      memItem.status = status;
+      memItem.updatedAt = new Date();
+      if (!updated) updated = memItem;
+    }
+
+    if (!updated && !memItem) {
+      return res.status(404).json({ error: "Inquiry not found" });
+    }
+
+    return res.json({ success: true, inquiry: updated || memItem });
+  } catch (err: any) {
+    return res.status(500).json({ error: "Failed to update inquiry status" });
+  }
+});
+
+app.delete("/api/admin/inquiries/:id", verifyAdminToken, async (req: AdminAuthRequest, res: Response) => {
+  try {
+    if (isMongoDBConnected()) {
+      try {
+        await Inquiry.findByIdAndDelete(req.params.id);
+      } catch (dbErr) {
+        console.warn("MongoDB delete inquiry failed:", dbErr);
+      }
+    }
+    const idx = inMemoryInquiries.findIndex((i) => String(i._id) === String(req.params.id));
+    if (idx !== -1) inMemoryInquiries.splice(idx, 1);
+
+    return res.json({ success: true, message: "Inquiry deleted successfully" });
+  } catch (err: any) {
+    return res.status(500).json({ error: "Failed to delete inquiry" });
   }
 });
 
@@ -581,9 +1875,25 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*all", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    const indexPath = path.join(distPath, "index.html");
+
+    // Serve built static assets from dist
+    app.use(express.static(distPath, { index: false }));
+
+    // Client-side SPA catch-all: any non-API route serves index.html
+    app.get("*", (req: Request, res: Response) => {
+      if (req.path.startsWith("/api/")) {
+        return res.status(404).json({ error: `API route not found: ${req.method} ${req.path}` });
+      }
+      res.sendFile(indexPath);
+    });
+
+    // Fallback handler for any remaining unhandled request
+    app.use((req: Request, res: Response) => {
+      if (req.path.startsWith("/api/")) {
+        return res.status(404).json({ error: `API route not found: ${req.method} ${req.path}` });
+      }
+      res.sendFile(indexPath);
     });
   }
 

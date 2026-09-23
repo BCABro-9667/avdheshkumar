@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Mail, X, CheckCircle2, Sparkles, ArrowRight } from "lucide-react";
+import { submitPopupSubscription } from "../lib/apiClient";
 
 interface EmailStayConnectedModalProps {
   isOpen: boolean;
@@ -18,7 +19,7 @@ export const EmailStayConnectedModal: React.FC<EmailStayConnectedModalProps> = (
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = email.trim();
     if (!trimmed) {
@@ -33,8 +34,8 @@ export const EmailStayConnectedModal: React.FC<EmailStayConnectedModalProps> = (
     setError("");
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      await submitPopupSubscription({ email: trimmed });
       setIsSubmitted(true);
       onSuccess(trimmed);
 
@@ -42,7 +43,11 @@ export const EmailStayConnectedModal: React.FC<EmailStayConnectedModalProps> = (
       setTimeout(() => {
         onClose();
       }, 2400);
-    }, 600);
+    } catch (err: any) {
+      setError(err.message || "Failed to submit. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

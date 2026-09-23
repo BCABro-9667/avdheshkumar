@@ -3,14 +3,16 @@ import { motion } from "motion/react";
 import { ArrowUpRight, Check, Sparkles, ExternalLink } from "lucide-react";
 import { Project } from "../data/portfolio";
 import { MagneticButton } from "./MagneticButton";
+import { LikeButton } from "./LikeButton";
 
 interface ProjectCardProps {
   project: Project;
   onSelect?: (project: Project) => void;
+  onNavigate?: (page: string) => void;
   index: number;
 }
 
-export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onSelect }) => {
+export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onNavigate }) => {
   // Theme variations
   const isDark = project.style === "dark";
   const isLavender = project.style === "lavender";
@@ -26,6 +28,8 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onSelect }) =
     : isLavender
     ? "shadow-[6px_6px_0px_#141413]"
     : "shadow-[6px_6px_0px_#141413]";
+
+  const slug = project.slug || project.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
   return (
     <motion.article
@@ -78,7 +82,10 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onSelect }) =
         </div>
 
         {/* Project Title & Narrative */}
-        <h3 className="font-display text-3xl sm:text-4xl font-bold tracking-tight mb-3 group-hover:translate-x-1 transition-transform duration-300">
+        <h3 
+          onClick={() => onNavigate && onNavigate(`projects/${slug}`)}
+          className="font-display text-3xl sm:text-4xl font-bold tracking-tight mb-3 group-hover:translate-x-1 transition-transform duration-300 cursor-pointer hover:underline"
+        >
           {project.title}
         </h3>
 
@@ -88,7 +95,10 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onSelect }) =
 
         {/* Hover Thumbnail Image Preview */}
         {project.imageUrl && (
-          <div className="relative mb-6 rounded-2xl overflow-hidden border border-current/20 aspect-[16/9] shadow-md group-hover:shadow-xl transition-all duration-300">
+          <div 
+            onClick={() => onNavigate && onNavigate(`projects/${slug}`)}
+            className="relative mb-6 rounded-2xl overflow-hidden border border-current/20 aspect-[16/9] shadow-md group-hover:shadow-xl transition-all duration-300 cursor-pointer"
+          >
             <img
               src={project.imageUrl}
               alt={project.title}
@@ -97,7 +107,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onSelect }) =
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60 group-hover:opacity-30 transition-opacity" />
             <span className="absolute bottom-3 left-3 font-mono text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-[#141413]/80 text-[#F5F2EA] backdrop-blur-md">
-              Preview Screenshot ↗
+              View Dedicated Page ↗
             </span>
           </div>
         )}
@@ -145,12 +155,12 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onSelect }) =
           </span>
         </MagneticButton>
 
-        {onSelect && (
+        {onNavigate && (
           <button
-            onClick={() => onSelect(project)}
-            className="font-mono text-xs opacity-75 hover:opacity-100 underline underline-offset-4 decoration-current/40 hover:decoration-current flex items-center gap-1 cursor-pointer"
+            onClick={() => onNavigate(`projects/${slug}`)}
+            className="font-mono text-xs opacity-75 hover:opacity-100 underline underline-offset-4 decoration-current/40 hover:decoration-current flex items-center gap-1 cursor-pointer font-bold"
           >
-            <span>Details</span>
+            <span>Get Details</span>
             <ExternalLink className="w-3 h-3" />
           </button>
         )}

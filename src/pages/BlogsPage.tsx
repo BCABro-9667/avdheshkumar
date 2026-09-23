@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { ArrowUpRight, BookOpen, Clock, Tag, Search, Sparkles } from "lucide-react";
 import { PORTFOLIO_DATA, BlogPostItem } from "../data/portfolio";
+import { LikeButton } from "../components/LikeButton";
+import { fetchBlogPosts } from "../lib/apiClient";
 
 interface BlogsPageProps {
   onNavigate: (page: string) => void;
@@ -9,8 +11,36 @@ interface BlogsPageProps {
 
 export const BlogsPage: React.FC<BlogsPageProps> = ({ onNavigate }) => {
   const [search, setSearch] = useState("");
+  const [allPosts, setAllPosts] = useState<BlogPostItem[]>(PORTFOLIO_DATA.blogs);
 
-  const filteredPosts = PORTFOLIO_DATA.blogs.filter(
+  useEffect(() => {
+    let isMounted = true;
+    async function load() {
+      try {
+        const posts = await fetchBlogPosts();
+        if (posts && posts.length > 0 && isMounted) {
+          const mapped: BlogPostItem[] = posts.map((p: any, idx: number) => ({
+            id: p.slug || p._id || `blog-${idx}`,
+            title: p.title,
+            status: p.status || "published",
+            category: p.category || "Web Development",
+            readTime: p.readTime || `${Math.max(3, Math.ceil((p.content?.length || 500) / 400))} min read`,
+            excerpt: p.excerpt || p.content?.slice(0, 140) || "",
+            tags: Array.isArray(p.tags) && p.tags.length > 0 ? p.tags : [p.category || "Full-Stack"],
+            content: p.content,
+            imageUrl: p.featuredImage || "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200&q=80",
+          }));
+          setAllPosts(mapped);
+        }
+      } catch (err) {
+        console.warn("Could not load dynamic blog posts:", err);
+      }
+    }
+    load();
+    return () => { isMounted = false; };
+  }, []);
+
+  const filteredPosts = allPosts.filter(
     (b) =>
       b.title.toLowerCase().includes(search.toLowerCase()) ||
       b.category.toLowerCase().includes(search.toLowerCase()) ||
@@ -124,8 +154,13 @@ export const BlogsPage: React.FC<BlogsPageProps> = ({ onNavigate }) => {
 
               <div className="pt-4 border-t border-[#141413]/10 flex items-center justify-between font-mono text-xs text-[#141413] font-medium">
                 <span className="group-hover:underline">Read full article ↗</span>
-                <div className="w-8 h-8 rounded-full bg-[#141413] text-[#F5F2EA] flex items-center justify-center group-hover:bg-[#D4F050] group-hover:text-[#141413] transition-colors">
-                  <ArrowUpRight className="w-4 h-4 group-hover:rotate-45 transition-transform" />
+                <div className="flex items-center gap-2">
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <LikeButton itemId={post.id} type="blog" size="sm" />
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-[#141413] text-[#F5F2EA] flex items-center justify-center group-hover:bg-[#D4F050] group-hover:text-[#141413] transition-colors">
+                    <ArrowUpRight className="w-4 h-4 group-hover:rotate-45 transition-transform" />
+                  </div>
                 </div>
               </div>
             </motion.article>

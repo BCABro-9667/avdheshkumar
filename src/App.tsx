@@ -3,11 +3,10 @@ import { Navbar } from "./components/Navbar";
 import { Hero } from "./components/Hero";
 import { Marquee } from "./components/Marquee";
 import { About } from "./components/About";
+import { Services } from "./components/Services";
 import { Skills } from "./components/Skills";
 import { Projects } from "./components/Projects";
 import { Gallery } from "./components/Gallery";
-import { Experience } from "./components/Experience";
-import { Education } from "./components/Education";
 import { Testimonials } from "./components/Testimonials";
 import { Blog } from "./components/Blog";
 import { Contact } from "./components/Contact";
@@ -24,9 +23,14 @@ import { BlogsPage } from "./pages/BlogsPage";
 import { BlogPostPage } from "./pages/BlogPostPage";
 import { ContactPage } from "./pages/ContactPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
+import { BuyMeAChaiPage } from "./pages/BuyMeAChaiPage";
 import { AdminLogin } from "./components/admin/AdminLogin";
 import { AdminLayout } from "./components/admin/AdminLayout";
 import { EmailStayConnectedModal } from "./components/EmailStayConnectedModal";
+import { PromotionBar } from "./components/PromotionBar";
+import { SiteSettingsProvider } from "./context/SiteSettingsContext";
+import { FeedbackModal } from "./components/FeedbackModal";
+import { MessageSquareHeart } from "lucide-react";
 
 type PageType = "home" | "about" | "projects" | "gallery" | "blogs" | "contact" | "admin" | "project-detail" | "blog-detail" | string;
 
@@ -35,9 +39,15 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<PageType>("home");
   const [blogId, setBlogId] = useState<string | null>(null);
   const [projectSlug, setProjectSlug] = useState<string | null>(null);
-  const [adminToken, setAdminToken] = useState<string | null>(localStorage.getItem("admin_token"));
+  const [adminToken, setAdminToken] = useState<string | null>(
+    localStorage.getItem("admin_token") || localStorage.getItem("portfolio_admin_token")
+  );
   const [adminUser, setAdminUser] = useState<any>(JSON.parse(localStorage.getItem("admin_user") || "null"));
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [showPromoBar, setShowPromoBar] = useState(() => {
+    return sessionStorage.getItem("portfolio_promo_bar_dismissed") !== "true";
+  });
 
   // 1-minute timer to prompt the user to stay connected (if never submitted before)
   useEffect(() => {
@@ -96,28 +106,39 @@ export default function App() {
   // Sync with URL Pathname and Hash on Mount and PopState
   useEffect(() => {
     const handleRouteChange = () => {
-      const pathname = window.location.pathname.replace(/^\//, "").toLowerCase();
-      const hash = window.location.hash.replace("#", "").toLowerCase();
-      const target = hash || pathname;
+      // Strip leading and trailing slashes
+      const rawPath = window.location.pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
+      const rawHash = window.location.hash.replace(/^#\/?/, "").replace(/\/+$/, "").toLowerCase();
+      let target = rawHash || rawPath;
+
+      // Normalize common aliases, plurals, and variations
+      if (target === "abouts") target = "about";
+      if (target === "project") target = "projects";
+      if (target === "blog") target = "blogs";
+      if (target === "contacts") target = "contact";
+      if (target === "galleries") target = "gallery";
+      if (target.startsWith("chai") || target.startsWith("buy-me-a-chai")) target = "chai";
 
       if (target.startsWith("admin")) {
         setCurrentPage("admin");
-      } else if (target.startsWith("blog/")) {
-        const id = target.replace("blog/", "");
+      } else if (target.startsWith("blog/") || target.startsWith("blogs/")) {
+        const id = target.replace(/^blogs?\//, "");
         setBlogId(id);
         setCurrentPage("blog-detail");
-      } else if (target.startsWith("projects/")) {
-        const slug = target.replace("projects/", "");
+      } else if (target.startsWith("projects/") || target.startsWith("project/")) {
+        const slug = target.replace(/^projects?\//, "");
         setProjectSlug(slug);
         setCurrentPage("project-detail");
-      } else if (["home", "about", "projects", "gallery", "blogs", "contact", "admin"].includes(target)) {
+      } else if (["home", "about", "projects", "gallery", "blogs", "contact", "chai"].includes(target)) {
         setCurrentPage(target);
         setBlogId(null);
         setProjectSlug(null);
+      } else if (target === "" || target === "index.html") {
+        setCurrentPage("home");
+        setBlogId(null);
+        setProjectSlug(null);
       } else {
-        if (target === "" || target === "index.html") {
-          setCurrentPage("home");
-        }
+        setCurrentPage("home");
       }
       window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     };
@@ -165,26 +186,55 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F2EA] text-[#141413] relative selection:bg-[#D4F050] selection:text-[#141413]">
-      {/* Subtle Grain Texture Overlay */}
-      <div className="grain-overlay pointer-events-none" />
+    <SiteSettingsProvider>
+      <div className="min-h-screen bg-[#F5F2EA] text-[#141413] relative selection:bg-[#D4F050] selection:text-[#141413]">
+        {/* Subtle Grain Texture Overlay */}
+        <div className="grain-overlay pointer-events-none" />
 
-      {/* Desktop Magnetic Cursor */}
-      <Cursor />
+        {/* Desktop Magnetic Cursor */}
+        <Cursor />
 
-      {/* Auto Back to Top Button */}
-      <ScrollToTop />
+        {/* Auto Back to Top Button */}
+        <ScrollToTop />
 
-      {/* Minimal Intro Loading Sequence */}
-      {loading && <LoadingScreen onComplete={() => setLoading(false)} />}
+        {/* Floating Feedback Button - Hidden on Admin */}
+        {currentPage !== "admin" && (
+          <button
+            type="button"
+            onClick={() => setShowFeedbackModal(true)}
+            aria-label="Give feedback"
+            className="fixed bottom-6 left-6 z-40 px-3.5 py-2 rounded-full bg-[#141413] hover:bg-[#D4F050] text-[#D4F050] hover:text-[#141413] font-mono text-xs font-bold border-2 border-[#141413] shadow-[3px_3px_0px_#141413] flex items-center gap-2 cursor-pointer transition-all hover:scale-105 select-none"
+          >
+            <MessageSquareHeart className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Feedback</span>
+          </button>
+        )}
 
-      {/* Fixed Sticky Minimalist Navbar */}
-      <Navbar
-        currentPage={currentPage.startsWith("blog") ? "blogs" : currentPage}
-        onNavigate={handleNavigate}
-      />
+        {/* Minimal Intro Loading Sequence */}
+        {loading && <LoadingScreen onComplete={() => setLoading(false)} />}
 
-      <main>
+      {/* Promotion Bar (Non-sticky, in-flow at the very top, closeable) - Hidden on Admin */}
+      {currentPage !== "admin" && (
+        <PromotionBar
+          isOpen={showPromoBar}
+          onClose={() => {
+            setShowPromoBar(false);
+            sessionStorage.setItem("portfolio_promo_bar_dismissed", "true");
+          }}
+          onNavigate={handleNavigate}
+        />
+      )}
+
+      {/* Fixed Minimalist Navbar - Hidden on Admin */}
+      {currentPage !== "admin" && (
+        <Navbar
+          currentPage={currentPage.startsWith("blog") ? "blogs" : currentPage}
+          onNavigate={handleNavigate}
+          promoBarVisible={showPromoBar}
+        />
+      )}
+
+      <main className={currentPage === "admin" ? "h-screen w-full overflow-hidden" : ""}>
         {currentPage === "home" && (
           <>
             {/* Hero Section */}
@@ -202,6 +252,9 @@ export default function App() {
             {/* 01 / About Section */}
             <About onNavigate={handleNavigate} />
 
+            {/* Services Section (Web Development 6 Cards) */}
+            <Services onNavigate={handleNavigate} />
+
             {/* Interactive Skills Cloud */}
             <Skills />
 
@@ -211,13 +264,7 @@ export default function App() {
             {/* 03 / Gallery Section (Preview + Explore More) */}
             <Gallery onNavigate={handleNavigate} />
 
-            {/* 04 / Experience Timeline */}
-            <Experience onNavigate={handleNavigate} />
-
-            {/* Education, Certifications & Achievements */}
-            <Education />
-
-            {/* 05 / Journal / Blog Section */}
+            {/* 04 / Journal / Blog Section */}
             <Blog onNavigate={handleNavigate} />
 
             {/* Testimonials */}
@@ -256,6 +303,10 @@ export default function App() {
           <ContactPage />
         )}
 
+        {currentPage === "chai" && (
+          <BuyMeAChaiPage onNavigate={handleNavigate} />
+        )}
+
         {currentPage === "admin" && (
           !adminToken ? (
             <AdminLogin
@@ -280,8 +331,10 @@ export default function App() {
         )}
       </main>
 
-      {/* Minimalist Editorial Footer */}
-      <Footer onBackToTop={scrollToTop} />
+      {/* Minimalist Editorial Footer - Hidden on Admin */}
+      {currentPage !== "admin" && (
+        <Footer onBackToTop={scrollToTop} onNavigate={handleNavigate} />
+      )}
 
       {/* 1-Minute Stay Connected Popup Modal */}
       <EmailStayConnectedModal
@@ -289,6 +342,13 @@ export default function App() {
         onClose={handleCloseEmailModal}
         onSuccess={handleEmailSubmitted}
       />
+
+      {/* Interactive Feedback Modal */}
+      <FeedbackModal
+        isOpen={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+      />
     </div>
+    </SiteSettingsProvider>
   );
 }

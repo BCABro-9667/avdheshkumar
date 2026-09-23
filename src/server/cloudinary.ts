@@ -17,11 +17,15 @@ export function configureCloudinary() {
   }
 }
 
-export async function uploadToCloudinary(fileBuffer: Buffer, folder = "portfolio_cms"): Promise<{ secure_url: string; public_id: string; width?: number; height?: number; format?: string }> {
+export async function uploadToCloudinary(
+  fileBuffer: Buffer,
+  folder = "portfolio_cms",
+  resource_type: "auto" | "image" | "raw" = "auto"
+): Promise<{ secure_url: string; public_id: string; width?: number; height?: number; format?: string }> {
   configureCloudinary();
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
-      { folder },
+      { folder, resource_type },
       (error, result) => {
         if (error || !result) {
           return reject(error || new Error("Cloudinary upload failed"));

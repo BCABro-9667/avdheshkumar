@@ -1,8 +1,10 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { motion, useScroll } from "motion/react";
 import { ArrowLeft, Clock, Tag, Share2, Sparkles, BookOpen, Quote, CheckCircle2, ChevronRight } from "lucide-react";
 import { PORTFOLIO_DATA, BlogPostItem } from "../data/portfolio";
 import { MagneticButton } from "../components/MagneticButton";
+import { LikeButton } from "../components/LikeButton";
+import { fetchBlogPostBySlug } from "../lib/apiClient";
 
 interface BlogPostPageProps {
   postId: string;
@@ -10,8 +12,48 @@ interface BlogPostPageProps {
 }
 
 export const BlogPostPage: React.FC<BlogPostPageProps> = ({ postId, onNavigate }) => {
-  const post = PORTFOLIO_DATA.blogs.find((b) => b.id === postId) || PORTFOLIO_DATA.blogs[0];
+  const localMatch = PORTFOLIO_DATA.blogs.find((b) => b.id === postId || b.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") === postId);
+  const [post, setPost] = useState<BlogPostItem>(localMatch || PORTFOLIO_DATA.blogs[0]);
+  const [loading, setLoading] = useState(!localMatch);
   const { scrollYProgress } = useScroll();
+
+  useEffect(() => {
+    let isMounted = true;
+    if (localMatch) {
+      setPost(localMatch);
+      setLoading(false);
+      return;
+    }
+
+    async function loadRemotePost() {
+      setLoading(true);
+      try {
+        const res = await fetchBlogPostBySlug(postId);
+        if (res && res.post && isMounted) {
+          const apiPost = res.post;
+          const mapped: BlogPostItem = {
+            id: apiPost.slug || apiPost._id || postId,
+            title: apiPost.title,
+            status: apiPost.status || "published",
+            category: apiPost.category || "Engineering",
+            readTime: apiPost.readTime || `${Math.max(3, Math.ceil((apiPost.content?.length || 500) / 400))} min read`,
+            excerpt: apiPost.excerpt || apiPost.content?.slice(0, 140) || "",
+            tags: Array.isArray(apiPost.tags) && apiPost.tags.length > 0 ? apiPost.tags : [apiPost.category || "Full-Stack"],
+            content: apiPost.content,
+            imageUrl: apiPost.featuredImage || "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200&q=80",
+          };
+          setPost(mapped);
+        }
+      } catch (e) {
+        console.warn("Could not fetch remote blog post:", e);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    loadRemotePost();
+    return () => { isMounted = false; };
+  }, [postId]);
 
   // Update document title for SEO & Lighthouse compliance when opening blog
   React.useEffect(() => {
@@ -91,13 +133,21 @@ export const BlogPostPage: React.FC<BlogPostPageProps> = ({ postId, onNavigate }
               ))}
             </div>
 
-            <button
-              onClick={handleShare}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FAF8F2] border-0 sm:border sm:border-[#141413]/20 font-mono text-xs uppercase tracking-wider text-[#141413] hover:bg-[#141413] hover:text-[#F5F2EA] transition-colors cursor-pointer outline-none"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              <span>Share Article</span>
-            </button>
+            <div className="flex items-center gap-3">
+              <LikeButton
+                itemId={post.id}
+                type="blog"
+                size="md"
+              />
+
+              <button
+                onClick={handleShare}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FAF8F2] border-0 sm:border sm:border-[#141413]/20 font-mono text-xs uppercase tracking-wider text-[#141413] hover:bg-[#141413] hover:text-[#F5F2EA] transition-colors cursor-pointer outline-none"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Share Article</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -255,6 +305,25 @@ export const BlogPostPage: React.FC<BlogPostPageProps> = ({ postId, onNavigate }
               })}
             </div>
           ) : null}
+
+          {/* Article Appreciation & Like Bar */}
+          <div className="my-8 p-6 sm:p-8 rounded-3xl bg-[#FAF8F2] border-2 border-[#141413] shadow-[4px_4px_0px_#141413] flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+              <h4 className="font-display font-bold text-xl text-[#141413]">
+                Enjoyed this article?
+              </h4>
+              <p className="font-sans text-sm text-[#6B6862] mt-1">
+                Drop a like to support the research and open-source writeups.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <LikeButton
+                itemId={post.id}
+                type="blog"
+                size="lg"
+              />
+            </div>
+          </div>
 
           {/* About Author Section */}
           <div className="pt-8 border-t-0 sm:border-t sm:border-[#141413]/10 space-y-4 outline-none">

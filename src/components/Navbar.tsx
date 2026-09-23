@@ -2,32 +2,43 @@ import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowUpRight, Menu, X } from "lucide-react";
 import { MagneticButton } from "./MagneticButton";
+import { EyeTrackerAvatar } from "./EyeTrackerAvatar";
 import { PORTFOLIO_DATA } from "../data/portfolio";
 
 interface NavbarProps {
   currentPage: string;
   onNavigate: (page: string) => void;
+  promoBarVisible?: boolean;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentPage, onNavigate }) => {
+export const Navbar: React.FC<NavbarProps> = ({ currentPage, onNavigate, promoBarVisible = false }) => {
   const [scrolled, setScrolled] = useState(false);
+  const [scrollY, setScrollY] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
-      setScrolled(window.scrollY > 30);
+      const y = window.scrollY;
+      setScrollY(y);
+      setScrolled(y > 20);
     };
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // ONLY show these 5 links per user instruction
+  // Top offset so Navbar sits cleanly below the non-fixed promotion bar when at top of page,
+  // and smoothly sticks to top-0 when the user scrolls past the promotion bar.
+  const promoHeight = 44;
+  const currentTop = promoBarVisible ? Math.max(0, promoHeight - scrollY) : 0;
+
+  // Main Navigation links
   const navLinks = [
     { id: "home", label: "Home" },
     { id: "about", label: "About" },
     { id: "projects", label: "Projects" },
     { id: "gallery", label: "Gallery" },
     { id: "blogs", label: "Blogs" },
+    { id: "chai", label: "Chai ☕" },
     { id: "contact", label: "Contact" },
   ];
 
@@ -39,7 +50,8 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPage, onNavigate }) => {
   return (
     <>
       <header
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        style={{ top: `${currentTop}px` }}
+        className={`fixed left-0 right-0 z-50 transition-all duration-150 ${
           scrolled
             ? "py-3 bg-[#F5F2EA]/90 backdrop-blur-md border-b border-[#141413]/10 shadow-[0_4px_24px_rgba(20,20,19,0.04)]"
             : "py-6 bg-transparent"
@@ -53,14 +65,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPage, onNavigate }) => {
               className="flex items-center gap-2.5 group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#141413] rounded-md px-1 py-0.5 cursor-pointer"
               aria-label="Avdhesh Kumar - Home"
             >
-              <div className="w-10 h-10 rounded-full bg-[#141413] text-[#F5F2EA] flex items-center justify-center font-display font-bold text-sm tracking-wider border-2 border-[#141413] group-hover:border-[#D4F050] transition-all duration-200 overflow-hidden shadow-xs">
-                <img
-                  src="https://lh3.googleusercontent.com/a/ACg8ocJ7FofI23jT__Rq8RvUh2iHs8VhCWjj4IvzZCmXfyVDiVrfgBeMnQ=s288-c-no"
-                  alt="Avdhesh Kumar"
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
+              <EyeTrackerAvatar size={40} />
               <div className="hidden sm:flex flex-col text-left">
                 <span className="font-display font-semibold text-sm tracking-tight text-[#141413]">
                   {PORTFOLIO_DATA.personal.name}
@@ -117,6 +122,17 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPage, onNavigate }) => {
 
           {/* Mobile Menu Toggle Button */}
           <div className="flex items-center gap-2 md:hidden">
+            <button
+              onClick={() => handleLinkClick("chai")}
+              className={`px-3 py-1.5 rounded-full font-mono text-xs uppercase tracking-wider transition-colors border border-[#141413] cursor-pointer ${
+                currentPage === "chai"
+                  ? "bg-[#D4F050] text-[#141413] font-bold"
+                  : "bg-[#FAF8F2] text-[#141413] hover:bg-[#D4F050]"
+              }`}
+              title="Buy Me a Chai"
+            >
+              ☕
+            </button>
             <button
               onClick={() => handleLinkClick("contact")}
               className="px-3.5 py-1.5 rounded-full bg-[#141413] text-[#F5F2EA] font-mono text-xs uppercase tracking-wider hover:bg-[#D4F050] hover:text-[#141413] transition-colors"

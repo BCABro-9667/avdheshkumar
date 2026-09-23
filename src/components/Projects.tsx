@@ -1,25 +1,76 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowRight, ExternalLink, X, Check, Filter } from "lucide-react";
 import { SectionHeading } from "./SectionHeading";
 import { ProjectCard } from "./ProjectCard";
 import { PORTFOLIO_DATA, Project } from "../data/portfolio";
 import { MagneticButton } from "./MagneticButton";
+import { fetchProjects } from "../lib/apiClient";
 
 interface ProjectsProps {
   onNavigate?: (page: string) => void;
   isPage?: boolean;
 }
 
-const CATEGORIES = ["All", "E-Commerce", "Landing Page", "Mobile Apps", "Task Management", "Community"];
+const DEFAULT_CATEGORIES = ["All", "E-Commerce", "Landing Page", "Mobile Apps", "Task Management", "Community"];
 
 export const Projects: React.FC<ProjectsProps> = ({ onNavigate, isPage = false }) => {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [projectsList, setProjectsList] = useState<Project[]>(PORTFOLIO_DATA.projects);
+  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function load() {
+      try {
+        const data = await fetchProjects();
+        if (data && data.length > 0 && isMounted) {
+          const styles: Array<'dark' | 'cream' | 'lavender'> = ['dark', 'cream', 'lavender'];
+          const mapped: Project[] = data.map((item: any, idx: number) => {
+            const style = styles[idx % styles.length];
+            const tech = Array.isArray(item.techStack) && item.techStack.length > 0
+              ? item.techStack.join(" · ")
+              : (Array.isArray(item.tags) ? item.tags.join(" · ") : (item.technology || "React · Node.js"));
+            const features = typeof item.description === "string" && item.description.includes("\n")
+              ? item.description.split("\n").filter((s: string) => s.trim().length > 0)
+              : [item.shortDescription || item.description || "Scalable modern architecture"];
+
+            return {
+              id: item._id || item.slug || String(idx),
+              _id: item._id,
+              slug: item.slug,
+              number: String(idx + 1).padStart(2, "0"),
+              title: item.title,
+              category: item.category || "Full-Stack",
+              technology: tech,
+              description: item.shortDescription || item.description || "",
+              features: features.length > 0 ? features : ["Modern responsive architecture"],
+              style: style,
+              ctaText: "Explore Case Study ↗",
+              url: item.liveUrl || "#",
+              githubUrl: item.githubUrl || "",
+              imageUrl: item.featuredImage || "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=1200&q=80",
+              likes: item.likes || 0,
+            };
+          });
+
+          setProjectsList(mapped);
+
+          const uniqueCats = Array.from(new Set(["All", ...mapped.map((p) => p.category).filter(Boolean)]));
+          setCategories(uniqueCats.length > 1 ? uniqueCats : DEFAULT_CATEGORIES);
+        }
+      } catch (err) {
+        console.warn("Could not load dynamic projects, using static list:", err);
+      }
+    }
+    load();
+    return () => { isMounted = false; };
+  }, []);
 
   const projectsToDisplay = isPage
-    ? PORTFOLIO_DATA.projects
-    : PORTFOLIO_DATA.projects.slice(0, 6); // show max 6 on home section
+    ? projectsList
+    : projectsList.slice(0, 6); // show max 6 on home section
 
   const filteredProjects = projectsToDisplay.filter((p) => {
     if (selectedCategory === "All") return true;
@@ -60,7 +111,7 @@ export const Projects: React.FC<ProjectsProps> = ({ onNavigate, isPage = false }
             <Filter className="w-3.5 h-3.5" />
             <span>Filter:</span>
           </div>
-          {CATEGORIES.map((cat) => {
+          {categories.map((cat) => {
             const isActive = selectedCategory === cat;
             return (
               <button
@@ -93,7 +144,7 @@ export const Projects: React.FC<ProjectsProps> = ({ onNavigate, isPage = false }
                 <ProjectCard
                   project={project}
                   index={idx}
-                  onSelect={(p) => setActiveProject(p)}
+                  onNavigate={onNavigate}
                 />
               </motion.div>
             ))}

@@ -4,6 +4,7 @@ import { ArrowUpRight, Trophy, GraduationCap, Briefcase, FolderGit2, Github, Lin
 import { SectionHeading } from "./SectionHeading";
 import { MagneticButton } from "./MagneticButton";
 import { PORTFOLIO_DATA } from "../data/portfolio";
+import { useSiteSettings } from "../context/SiteSettingsContext";
 
 // Stat counter hook
 const StatCard: React.FC<{
@@ -70,26 +71,26 @@ const StatCard: React.FC<{
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
       transition={{ duration: 0.6, delay, ease: [0.16, 1, 0.3, 1] }}
-      className="p-6 sm:p-7 rounded-2xl bg-[#FAF8F2] border border-[#141413]/15 shadow-[2px_2px_0px_rgba(20,20,19,0.08)] hover:shadow-[4px_4px_0px_#141413] hover:border-[#141413] transition-all duration-300 group"
+      className="p-4 sm:p-7 rounded-2xl bg-[#FAF8F2] border border-[#141413]/15 shadow-[2px_2px_0px_rgba(20,20,19,0.08)] hover:shadow-[4px_4px_0px_#141413] hover:border-[#141413] transition-all duration-300 group"
     >
-      <div className="flex items-center justify-between mb-4">
-        <div className="p-2.5 rounded-xl bg-[#F5F2EA] text-[#141413] group-hover:bg-[#D4F050] transition-colors border border-[#141413]/10">
+      <div className="flex items-center justify-between mb-3 sm:mb-4">
+        <div className="p-2 sm:p-2.5 rounded-xl bg-[#F5F2EA] text-[#141413] group-hover:bg-[#D4F050] transition-colors border border-[#141413]/10">
           {icon}
         </div>
-        <span className="font-mono text-[10px] text-[#6B6862] uppercase tracking-widest">
+        <span className="font-mono text-[9px] sm:text-[10px] text-[#6B6862] uppercase tracking-widest">
           METRIC
         </span>
       </div>
 
-      <div className="font-display text-4xl sm:text-5xl font-bold tracking-tight text-[#141413] mb-1">
+      <div className="font-display text-3xl sm:text-5xl font-bold tracking-tight text-[#141413] mb-1">
         {displayValue}
       </div>
 
-      <div className="font-sans font-semibold text-base text-[#141413] mb-1">
+      <div className="font-sans font-semibold text-xs sm:text-base text-[#141413] mb-1">
         {label}
       </div>
 
-      <p className="font-sans text-xs text-[#6B6862] leading-relaxed">
+      <p className="font-sans text-[11px] sm:text-xs text-[#6B6862] leading-relaxed line-clamp-2 sm:line-clamp-none">
         {detail}
       </p>
     </motion.div>
@@ -101,17 +102,10 @@ interface AboutProps {
 }
 
 export const About: React.FC<AboutProps> = ({ onNavigate }) => {
+  const { downloadResume } = useSiteSettings();
+
   const handleDownloadResume = () => {
-    const resumeText = `AVDHESH KUMAR - RESUME\nFull-Stack & Frontend Web Developer\nGurugram, India | avdhesh6968@gmail.com\n\nSUMMARY:\nFull-Stack Web Developer and Computer Applications student with over 9 months of intensive frontend and IT web engineering internship experience.\n\nEDUCATION:\n- Master of Computer Applications (MCA) - DPG Degree College (2025-2027) [ACTIVE DEGREE]\n- Bachelor of Computer Applications (BCA) - DPG Degree College (CGPA: 8.0, 2022-2025) [ACTIVE CGPA]\n- Senior Secondary (12th Grade) - 2022\n- Secondary School (10th Grade) - 2020\n\nEXPERIENCE [ACTIVE]:\n- Frontend & IT Engineering Intern at Estovir Technologies (6 months)\n- Frontend Web Development Intern at Reachcure Healthcare (3 months)\n\nTECHNICAL STACK:\nReact, Next.js, JavaScript, TypeScript, Node.js, Express, MongoDB, MySQL, Tailwind CSS, WordPress, SEO.\n\nHONORS & ACHIEVEMENTS [ACTIVE]:\n- 3x College Chess Champion`;
-    const blob = new Blob([resumeText], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "Avdhesh_Kumar_Resume.txt";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadResume();
   };
 
   const statIcons = [
@@ -326,8 +320,8 @@ export const About: React.FC<AboutProps> = ({ onNavigate }) => {
           </div>
         </div>
 
-        {/* Animated Statistics Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Animated Statistics Grid: 2 in a row horizontally on mobile, 4 in a row on desktop */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
           {PORTFOLIO_DATA.stats.map((stat, idx) => (
             <StatCard
               key={stat.label}
